@@ -1,34 +1,17 @@
 (function() {
-  var driver = require("./driver.js")
-  require("./tests.js");
-  require("./tests-harmony.js");
-  require("./tests-es7.js");
-  require("./tests-asyncawait.js");
-  require("./tests-await-top-level.js");
-  require("./tests-trailing-commas-in-func.js");
-  require("./tests-template-literal-revision.js");
-  require("./tests-directive.js");
-  require("./tests-rest-spread-properties.js");
-  require("./tests-async-iteration.js");
-  require("./tests-regexp.js");
-  require("./tests-regexp-2018.js");
-  require("./tests-regexp-2020.js");
-  require("./tests-regexp-2022.js");
-  require("./tests-regexp-2024.js");
-  require("./tests-json-superset.js");
-  require("./tests-optional-catch-binding.js");
-  require("./tests-bigint.js");
-  require("./tests-dynamic-import.js");
-  require("./tests-export-all-as-ns-from-source.js");
-  require("./tests-import-meta.js");
-  require("./tests-nullish-coalescing.js");
-  require("./tests-optional-chaining.js");
-  require("./tests-logical-assignment-operators.js");
-  require("./tests-numeric-separators.js");
-  require("./tests-class-features-2022.js");
-  require("./tests-module-string-names.js");
-  var acorn = require("../acorn")
-  var acorn_loose = require("../acorn-loose")
+  var driver, acorn;
+
+  if (typeof require !== "undefined") {
+    driver = require("./driver.js");
+    require("./tests.js");
+    require("./tests-harmony.js");
+    require("./tests-es7.js");
+    acorn = require("../dist/acorn")
+    require("../dist/acorn_loose")
+  } else {
+    driver = window;
+    acorn = window.acorn;
+  }
 
   var htmlLog = typeof document === "object" && document.getElementById('log');
   var htmlGroup = htmlLog;
@@ -73,7 +56,7 @@
     },
     Loose: {
       config: {
-        parse: acorn_loose.parse,
+        parse: acorn.parse_dammit,
         loose: true,
         filter: function (test) {
           var opts = test.options || {};
@@ -84,7 +67,7 @@
   };
 
   function report(state, code, message) {
-    if (state !== "ok") {++stats.failed; log(code, message);}
+    if (state != "ok") {++stats.failed; log(code, message);}
     ++stats.testsRun;
   }
 

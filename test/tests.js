@@ -1,67 +1,11 @@
 // Tests largely based on those of Esprima
 // (http://esprima.org/test/)
 
-if (typeof exports !== "undefined") {
+if (typeof exports != "undefined") {
   var driver = require("./driver.js");
-  var test = driver.test, testFail = driver.testFail, testAssert = driver.testAssert;
-  var acorn = require("../acorn");
+  var test = driver.test, testFail = driver.testFail, testAssert = driver.testAssert, misMatch = driver.misMatch;
+  var acorn = require("..");
 }
-
-test("import ''", {
-  type: "Program",
-  start: 0,
-  end: 9,
-  body: [
-    {
-      type: "ImportDeclaration",
-      start: 0,
-      end: 9,
-      specifiers: [],
-      source: {
-        type: "Literal",
-        start: 7,
-        end: 9,
-        value: "",
-        raw: "''"
-      }
-    }
-  ]
-}, {
-  ecmaVersion: 5,
-  sourceType: "module"
-});
-
-testFail("import('')", "Unexpected token (1:6)", {
-  ecmaVersion: 5,
-  sourceType: "module"
-});
-
-test("new Object", {
-  type: "Program",
-  start: 0,
-  end: 10,
-  body: [
-    {
-      type: "ExpressionStatement",
-      start: 0,
-      end: 10,
-      expression: {
-        type: "NewExpression",
-        start: 0,
-        end: 10,
-        callee: {
-          type: "Identifier",
-          start: 4,
-          end: 10,
-          name: "Object"
-        },
-        arguments: []
-      }
-    }
-  ]
-}, {
-  allowReserved: "never"
-});
 
 test("this\n", {
   type: "Program",
@@ -459,24 +403,24 @@ test("(1 + 2 ) * 3", {
   preserveParens: true
 });
 
-test("(x = 23)", {
+test("(x) = 23", {
   body: [
     {
       expression: {
-        type: "ParenthesizedExpression",
-        expression: {
-          type: "AssignmentExpression",
-          operator: "=",
-          left: {
+        operator: "=",
+        left: {
+          expression: {
             name: "x",
             type: "Identifier",
           },
-          right: {
-            value: 23,
-            raw: "23",
-            type: "Literal",
-          },
+          type: "ParenthesizedExpression",
         },
+        right: {
+          value: 23,
+          raw: "23",
+          type: "Literal",
+        },
+        type: "AssignmentExpression",
       },
       type: "ExpressionStatement",
     }
@@ -6913,94 +6857,6 @@ test("\"Hello\\\nworld\"", {
   }
 });
 
-test("\"Hello\\\u2028world\"", {
-  type: "Program",
-  body: [
-    {
-      type: "ExpressionStatement",
-      expression: {
-        type: "Literal",
-        value: "Helloworld",
-        raw: "\"Hello\\\u2028world\"",
-        loc: {
-          start: {
-            line: 1,
-            column: 0
-          },
-          end: {
-            line: 1,
-            column: 14
-          }
-        }
-      },
-      loc: {
-        start: {
-          line: 1,
-          column: 0
-        },
-        end: {
-          line: 1,
-          column: 14
-        }
-      }
-    }
-  ],
-  loc: {
-    start: {
-      line: 1,
-      column: 0
-    },
-    end: {
-      line: 1,
-      column: 14
-    }
-  }
-});
-
-test("\"Hello\\\u2029world\"", {
-  type: "Program",
-  body: [
-    {
-      type: "ExpressionStatement",
-      expression: {
-        type: "Literal",
-        value: "Helloworld",
-        raw: "\"Hello\\\u2029world\"",
-        loc: {
-          start: {
-            line: 1,
-            column: 0
-          },
-          end: {
-            line: 1,
-            column: 14
-          }
-        }
-      },
-      loc: {
-        start: {
-          line: 1,
-          column: 0
-        },
-        end: {
-          line: 1,
-          column: 14
-        }
-      }
-    }
-  ],
-  loc: {
-    start: {
-      line: 1,
-      column: 0
-    },
-    end: {
-      line: 1,
-      column: 14
-    }
-  }
-});
-
 test("\"Hello\\02World\"", {
   type: "Program",
   body: [
@@ -7912,7 +7768,78 @@ test("var x = /=([^=\\s])+/g", {
   }
 });
 
-testFail("var x = /[P QR]/\\u0067", "Unexpected token (1:16)");
+test("var x = /[P QR]/\\u0067", {
+  type: "Program",
+  body: [
+    {
+      type: "VariableDeclaration",
+      declarations: [
+        {
+          type: "VariableDeclarator",
+          id: {
+            type: "Identifier",
+            name: "x",
+            loc: {
+              start: {
+                line: 1,
+                column: 4
+              },
+              end: {
+                line: 1,
+                column: 5
+              }
+            }
+          },
+          init: {
+            type: "Literal",
+            value: /[P QR]/g,
+            loc: {
+              start: {
+                line: 1,
+                column: 8
+              },
+              end: {
+                line: 1,
+                column: 22
+              }
+            }
+          },
+          loc: {
+            start: {
+              line: 1,
+              column: 4
+            },
+            end: {
+              line: 1,
+              column: 22
+            }
+          }
+        }
+      ],
+      kind: "var",
+      loc: {
+        start: {
+          line: 1,
+          column: 0
+        },
+        end: {
+          line: 1,
+          column: 22
+        }
+      }
+    }
+  ],
+  loc: {
+    start: {
+      line: 1,
+      column: 0
+    },
+    end: {
+      line: 1,
+      column: 22
+    }
+  }
+});
 
 test("new Button", {
   type: "Program",
@@ -19745,16 +19672,6 @@ test("for (var x in list) process(x);", {
     }
   }
 });
-testFail("var x; for (x = 0 in list) process(x);", "Assigning to rvalue (1:12)")
-testFail("'use strict'; for (var x = 0 in list) process(x);", "for-in loop variable declaration may not have an initializer (1:19)")
-testFail("for (var [x] = 0 in list) process(x);", "for-in loop variable declaration may not have an initializer (1:5)", { ecmaVersion: 6 })
-testFail("for (var {x} = 0 in list) process(x);", "for-in loop variable declaration may not have an initializer (1:5)", { ecmaVersion: 6 })
-testFail("for (var x = 42 in list) process(x);", "for-in loop variable declaration may not have an initializer (1:5)", { ecmaVersion: 6 })
-
-testFail("for (let.bar of list);", "The left-hand side of a for-of loop may not start with 'let'. (1:5)", { ecmaVersion: 6 })
-testFail("for (let().bar of list);", "The left-hand side of a for-of loop may not start with 'let'. (1:5)", { ecmaVersion: 6 })
-testFail("for (let``.bar of list);", "The left-hand side of a for-of loop may not start with 'let'. (1:5)", { ecmaVersion: 6 })
-testFail("'use strict'; for (let in list);", "The keyword 'let' is reserved (1:19)")
 
 test("for (var x = 42 in list) process(x);", {
   type: "Program",
@@ -19910,7 +19827,7 @@ test("for (var x = 42 in list) process(x);", {
       column: 36
     }
   }
-}, { ecmaVersion: 8, locations: true });
+});
 
 test("for (var i = function() { return 10 in [] } in list) process(x);", {
   type: "Program",
@@ -20137,7 +20054,7 @@ test("for (var i = function() { return 10 in [] } in list) process(x);", {
       column: 64
     }
   }
-}, { ecmaVersion: 8, locations: true });
+});
 
 test("while (true) { continue; }", {
   type: "Program",
@@ -20801,57 +20718,6 @@ test("done: while (true) { break done; }", {
       column: 34
     }
   }
-});
-
-test("done: switch (a) { default: break done }", {
-  "type": "Program",
-  "start": 0,
-  "end": 40,
-  "body": [
-    {
-      "type": "LabeledStatement",
-      "start": 0,
-      "end": 40,
-      "body": {
-        "type": "SwitchStatement",
-        "start": 6,
-        "end": 40,
-        "discriminant": {
-          "type": "Identifier",
-          "start": 14,
-          "end": 15,
-          "name": "a"
-        },
-        "cases": [
-          {
-            "type": "SwitchCase",
-            "start": 19,
-            "end": 38,
-            "consequent": [
-              {
-                "type": "BreakStatement",
-                "start": 28,
-                "end": 38,
-                "label": {
-                  "type": "Identifier",
-                  "start": 34,
-                  "end": 38,
-                  "name": "done"
-                }
-              }
-            ],
-            "test": null
-          }
-        ]
-      },
-      "label": {
-        "type": "Identifier",
-        "start": 0,
-        "end": 4,
-        "name": "done"
-      }
-    }
-  ]
 });
 
 test("target1: target2: while (true) { continue target1; }", {});
@@ -26521,55 +26387,6 @@ test("foo: if (true) break foo;", {
   ]
 });
 
-test("a: { b: switch(x) {} }", {
-  "type": "Program",
-  "start": 0,
-  "end": 22,
-  "body": [
-    {
-      "type": "LabeledStatement",
-      "start": 0,
-      "end": 22,
-      "body": {
-        "type": "BlockStatement",
-        "start": 3,
-        "end": 22,
-        "body": [
-          {
-            "type": "LabeledStatement",
-            "start": 5,
-            "end": 20,
-            "body": {
-              "type": "SwitchStatement",
-              "start": 8,
-              "end": 20,
-              "discriminant": {
-                "type": "Identifier",
-                "start": 15,
-                "end": 16,
-                "name": "x"
-              },
-              "cases": []
-            },
-            "label": {
-              "type": "Identifier",
-              "start": 5,
-              "end": 6,
-              "name": "b"
-            }
-          }
-        ]
-      },
-      "label": {
-        "type": "Identifier",
-        "start": 0,
-        "end": 1,
-        "name": "a"
-      }
-    }
-  ]
-});
-
 test("(function () {\n 'use strict';\n '\0';\n}())", {
   type: "Program",
   loc: {
@@ -26971,7 +26788,6 @@ test("a.in / b", {
 // A number of slash-disambiguation corner cases
 test("return {} / 2", {}, {allowReturnOutsideFunction: true});
 test("return\n{}\n/foo/", {}, {allowReturnOutsideFunction: true});
-test("function f() {super.foo()}", {}, {allowSuperOutsideMethod: true, allowReserved: true});
 test("+{} / 2", {});
 test("{}\n/foo/", {});
 test("x++\n{}\n/foo/", {});
@@ -26991,8 +26807,6 @@ test("foo: function x() {} /regexp/", {});
 test("x = {foo: function x() {} / divide}", {});
 test("foo; function f() {} /regexp/", {});
 test("{function f() {} /regexp/}", {});
-test("function fn() {return\nfunction foo() {}\n/42/}", {});
-test("var x\n/foo/", {});
 
 test("{}/=/", {
   type: "Program",
@@ -27131,11 +26945,11 @@ testFail("3x0",
 testFail("0x",
          "Expected number in radix 16 (1:2)");
 
-testFail("'use strict'; 09",
-         "Invalid number (1:14)");
+testFail("09",
+         "Invalid number (1:0)");
 
-testFail("'use strict'; 018",
-         "Invalid number (1:14)");
+testFail("018",
+         "Invalid number (1:0)");
 
 testFail("01a",
          "Identifier directly after number (1:2)");
@@ -27174,7 +26988,7 @@ testFail("func() = 4",
          "Assigning to rvalue (1:0)");
 
 testFail("(1 + 1) = 10",
-         "Assigning to rvalue (1:0)");
+         "Assigning to rvalue (1:1)");
 
 testFail("1++",
          "Assigning to rvalue (1:0)");
@@ -27189,7 +27003,7 @@ testFail("--1",
          "Assigning to rvalue (1:2)");
 
 testFail("for((1 + 1) in list) process(x);",
-         "Assigning to rvalue (1:4)");
+         "Assigning to rvalue (1:5)");
 
 testFail("[",
          "Unexpected token (1:1)");
@@ -27213,7 +27027,7 @@ testFail("var x = \"\n",
          "Unterminated string constant (1:8)");
 
 testFail("var if = 42",
-         "Unexpected keyword 'if' (1:4)");
+         "Unexpected token (1:4)");
 
 testFail("i + 2 = 42",
          "Assigning to rvalue (1:0)");
@@ -27284,28 +27098,28 @@ testFail("function t(...rest, b) { }",
          { ecmaVersion: 6 });
 
 testFail("function t(if) { }",
-         "Unexpected keyword 'if' (1:11)");
+         "Unexpected token (1:11)");
 
 testFail("function t(true) { }",
-         "Unexpected keyword 'true' (1:11)");
+         "Unexpected token (1:11)");
 
 testFail("function t(false) { }",
-         "Unexpected keyword 'false' (1:11)");
+         "Unexpected token (1:11)");
 
 testFail("function t(null) { }",
-         "Unexpected keyword 'null' (1:11)");
+         "Unexpected token (1:11)");
 
 testFail("function null() { }",
-         "Unexpected keyword 'null' (1:9)");
+         "Unexpected token (1:9)");
 
 testFail("function true() { }",
-         "Unexpected keyword 'true' (1:9)");
+         "Unexpected token (1:9)");
 
 testFail("function false() { }",
-         "Unexpected keyword 'false' (1:9)");
+         "Unexpected token (1:9)");
 
 testFail("function if() { }",
-         "Unexpected keyword 'if' (1:9)");
+         "Unexpected token (1:9)");
 
 testFail("a b;",
          "Unexpected token (1:2)");
@@ -27496,8 +27310,6 @@ testFail("x: while (true) { x: while (true) { } }",
 testFail("(function () { 'use strict'; delete i; }())",
          "Deleting local variable in strict mode (1:29)");
 
-testFail("function x() { '\\12'; 'use strict'; }", "Octal literal in strict mode (1:16)")
-
 testFail("(function () { 'use strict'; with (i); }())",
          "'with' in strict mode (1:29)");
 
@@ -27678,7 +27490,7 @@ testFail("(function a(package) { \"use strict\"; })",
 testFail("\"use strict\";function foo(){\"use strict\";}function bar(){var v = 015}",
          "Invalid number (1:65)");
 
-testFail("var this = 10;", "Unexpected keyword 'this' (1:4)");
+testFail("var this = 10;", "Unexpected token (1:4)");
 
 testFail("throw\n10;", "Illegal newline after throw (1:5)");
 
@@ -27697,11 +27509,7 @@ testFail("for(const x = 0;;);", "The keyword 'const' is reserved (1:4)");
 
 testFail("for(let x = 0;;);", "Unexpected token (1:8)");
 
-testFail("function a(b = c) {}", "Unexpected token (1:13)");
-
-testFail("switch (x) { something }", "Unexpected token (1:13)");
-
-testFail("`abc`", "Unexpected character '`' (1:0)", {ecmaVersion: 5});
+testFail("function a(b = c) {}", "Unexpected token (1:13)")
 
 test("let++", {
   type: "Program",
@@ -29156,7 +28964,7 @@ test('var x = (1 + 2)', {}, {
       }
     },
     {
-      type: tokTypes.plusMin,
+      type: {binop: 9, prefix: true, beforeExpr: true},
       value: "+",
       loc: {
         start: {line: 1, column: 11},
@@ -29192,7 +29000,7 @@ test('var x = (1 + 2)', {}, {
 
 test("function f(f) { 'use strict'; }", {});
 
-// https://github.com/acornjs/acorn/issues/180
+// https://github.com/ternjs/acorn/issues/180
 test("#!/usr/bin/node\n;", {}, {
   allowHashBang: true,
   onComment: [{
@@ -29203,7 +29011,7 @@ test("#!/usr/bin/node\n;", {}, {
   }]
 });
 
-// https://github.com/acornjs/acorn/issues/204
+// https://github.com/ternjs/acorn/issues/204
 test("(function () {} / 1)", {
   type: "Program",
   body: [{
@@ -29248,7 +29056,7 @@ test("function f() {} / 1 /", {
   ]
 });
 
-// https://github.com/acornjs/acorn/issues/320
+// https://github.com/ternjs/acorn/issues/320
 
 test("do /x/; while (false);", {
   type: "Program",
@@ -29277,7 +29085,7 @@ var semicolons = []
 testAssert("var x\nreturn\n10", function() {
   var result = semicolons.join(" ");
   semicolons.length = 0;
-  if (result !== "5 12 15")
+  if (result != "5 12 15")
     return "Unexpected result for onInsertedSemicolon: " + result;
 }, {onInsertedSemicolon: function(pos) { semicolons.push(pos); },
     allowReturnOutsideFunction: true,
@@ -29287,18 +29095,18 @@ var trailingCommas = []
 testAssert("[1,2,] + {foo: 1,}", function() {
   var result = trailingCommas.join(" ");
   trailingCommas.length = 0;
-  if (result !== "4 16")
+  if (result != "4 16")
     return "Unexpected result for onTrailingComma: " + result;
 }, {onTrailingComma: function(pos) { trailingCommas.push(pos); },
     loose: false})
 
-// https://github.com/acornjs/acorn/issues/275
+// https://github.com/ternjs/acorn/issues/275
 
 testFail("({ get prop(x) {} })", "getter should have no params (1:11)");
 testFail("({ set prop() {} })", "setter should have exactly one param (1:11)");
 testFail("({ set prop(x, y) {} })", "setter should have exactly one param (1:11)");
 
-// https://github.com/acornjs/acorn/issues/363
+// https://github.com/ternjs/acorn/issues/363
 
 test("/[a-z]/gim", {
   type: "Program",
@@ -29319,613 +29127,3 @@ test("/[a-z]/gim", {
 testFail("/[a-z]/u", "Invalid regular expression flag (1:1)");
 testFail("/[a-z]/y", "Invalid regular expression flag (1:1)");
 testFail("/[a-z]/s", "Invalid regular expression flag (1:1)");
-testFail("/a/gg", "Duplicate regular expression flag (1:1)");
-
-testFail("function(){}", "Unexpected token (1:8)");
-
-test("0123. in/foo/i", {
-  "type": "Program",
-  "body": [
-    {
-      "type": "ExpressionStatement",
-      "expression": {
-        "type": "BinaryExpression",
-        "left": {
-          "type": "BinaryExpression",
-          "left": {
-            "type": "MemberExpression",
-            "object": {
-              "type": "Literal",
-              "value": 83,
-              "raw": "0123"
-            },
-            "property": {
-              "type": "Identifier",
-              "name": "in"
-            },
-            "computed": false
-          },
-          "operator": "/",
-          "right": {
-            "type": "Identifier",
-            "name": "foo"
-          }
-        },
-        "operator": "/",
-        "right": {
-          "type": "Identifier",
-          "name": "i"
-        }
-      }
-    }
-  ]
-})
-
-test("0128", {
-  "type": "Program",
-  "body": [
-    {
-      "type": "ExpressionStatement",
-      "expression": {
-        "type": "Literal",
-        "value": 128,
-        "raw": "0128"
-      }
-    }
-  ]
-})
-
-testFail("07.5", "Unexpected token (1:2)")
-
-test("08.5", {
-  "type": "Program",
-  "body": [
-    {
-      "type": "ExpressionStatement",
-      "expression": {
-        "type": "Literal",
-        "value": 8.5,
-        "raw": "08.5"
-      }
-    }
-  ]
-})
-
-test("undefined", {}, { ecmaVersion: 8 })
-
-testFail("\\u{74}rue", "Escape sequence in keyword true (1:0)", {ecmaVersion: 6})
-testFail("export { X \\u0061s Y }", "Unexpected token (1:11)", {ecmaVersion: 7, sourceType: "module"})
-testFail("import X fro\\u006d 'x'", "Unexpected token (1:9)", {ecmaVersion: 7, sourceType: "module"})
-testFail("le\\u0074 x = 5", "Unexpected token (1:9)", {ecmaVersion: 6})
-testFail("(function* () { y\\u0069eld 10 })", "Cannot use 'yield' as identifier inside a generator (1:16)", {ecmaVersion: 6})
-testFail("(async function() { aw\\u0061it x })", "Cannot use 'await' as identifier inside an async function (1:20)", {ecmaVersion: 8})
-testFail("(\\u0061sync function() { await x })", "Unexpected token (1:12)", {ecmaVersion: 8})
-testFail("(\\u0061sync () => { await x })", "Unexpected token (1:15)", {ecmaVersion: 8})
-testFail("\\u0061sync x => { await x }", "Unexpected token (1:11)", {ecmaVersion: 8})
-testFail("class X { \\u0061sync x() { await x } }", "Unexpected token (1:21)", {ecmaVersion: 8})
-testFail("class X { static \\u0061sync x() { await x } }", "Unexpected token (1:28)", {ecmaVersion: 8})
-testFail("({ ge\\u0074 x() {} })", "Unexpected token (1:12)")
-testFail("export \\u0061sync function y() { await x }", "Unexpected token (1:7)", {ecmaVersion: 8, sourceType: "module"})
-testFail("export default \\u0061sync function () { await x }", "Unexpected token (1:26)", {ecmaVersion: 8, sourceType: "module"})
-test("(\\u0061sync ())", {
-  "type": "Program",
-  "start": 0,
-  "end": 15,
-  "body": [
-    {
-      "type": "ExpressionStatement",
-      "start": 0,
-      "end": 15,
-      "expression": {
-        "type": "CallExpression",
-        "start": 1,
-        "end": 14,
-        "callee": {
-          "type": "Identifier",
-          "start": 1,
-          "end": 11,
-          "name": "async"
-        },
-        "arguments": []
-      }
-    }
-  ],
-  "sourceType": "script"
-}, {ecmaVersion: 8})
-testFail("({ \\u0061sync x() { await x } })", "Unexpected token (1:14)", {ecmaVersion: 8})
-testFail("for (x \\u006ff y) {}", "Unexpected token (1:7)", {ecmaVersion: 6})
-testFail("function x () { new.ta\\u0072get }", "'new.target' must not contain escaped characters (1:16)", {ecmaVersion: 6})
-testFail("class X { st\\u0061tic y() {} }", "Unexpected token (1:22)", {ecmaVersion: 6})
-
-testFail("(x=1)=2", "Assigning to rvalue (1:0)")
-testFail("(x=1)=2", "Assigning to rvalue (1:1)", {ecmaVersion: 6})
-
-test("(foo = [])[0] = 4;", {})
-
-test("for ((foo = []).bar in {}) {}", {})
-
-test("((b), a=1)", {})
-
-test("(x) = 1", {})
-
-test("try {} catch (foo) { var foo; }", {}, {ecmaVersion: 6})
-testFail("try {} catch (foo) { let foo; }", "Identifier 'foo' has already been declared (1:25)", {ecmaVersion: 6})
-test("try {} catch (foo) { try {} catch (_) { var foo; } }", {}, {ecmaVersion: 6})
-testFail("try {} catch ([foo]) { var foo; }", "Identifier 'foo' has already been declared (1:27)", {ecmaVersion: 6})
-testFail("try {} catch ({ foo }) { var foo; }", "Identifier 'foo' has already been declared (1:29)", {ecmaVersion: 6})
-testFail("try {} catch ([foo, foo]) {}", "Identifier 'foo' has already been declared (1:20)", {ecmaVersion: 6})
-testFail("try {} catch ({ a: foo, b: { c: [foo] } }) {}", "Identifier 'foo' has already been declared (1:33)", {ecmaVersion: 6})
-testFail("let foo; try {} catch (foo) {} let foo;", "Identifier 'foo' has already been declared (1:35)", {ecmaVersion: 6})
-testFail("try {} catch (foo) { function foo() {} }", "Identifier 'foo' has already been declared (1:30)")
-test("try {} catch (foo) { if (1) function foo() {} }", {}, {ecmaVersion: 6})
-
-test("try {} catch (foo) {} var foo;", {})
-test("try {} catch (foo) {} let foo;", {}, {ecmaVersion: 6})
-test("try {} catch (foo) { { let foo; } }", {}, {ecmaVersion: 6})
-test("try {} catch (foo) { function x() { var foo; } }", {}, {ecmaVersion: 6})
-test("try {} catch (foo) { function x(foo) {} }", {}, {ecmaVersion: 6})
-
-test("'use strict'; let foo = function foo() {}", {}, {ecmaVersion: 6})
-
-test("/**/ --> comment\n", {})
-test("x.class++", {})
-
-testFail("½", "Unexpected character '½' (1:0)")
-
-// Ignore use-strict strings that aren't a stand-along expression
-test("'use strict'.foo; 05", {}, {ecmaVersion: 6})
-test("'use strict'\n.foo; 05", {}, {ecmaVersion: 6})
-test("\"use strict\"(foo); 05", {}, {ecmaVersion: 6})
-test("'use strict'`foo`; 05", {}, {ecmaVersion: 6})
-test("'use strict'\n+ 10; 05", {}, {ecmaVersion: 6})
-test("'use strict'\n!=10; 05", {}, {ecmaVersion: 6})
-
-// Don't ignore those that are, even with semicolon insertion
-testFail("\"use strict\"\nfoo\n05", "Invalid number (3:0)", {ecmaVersion: 6})
-testFail("\"use strict\"\n;(foo)\n05", "Invalid number (3:0)", {ecmaVersion: 6})
-testFail("'use strict'\n!blah; 05", "Invalid number (2:7)", {ecmaVersion: 6})
-
-// Make sure a slash after an anonymous function/class in a for spec is treated as division
-test("for (; function () {} / 1;);", {}, {ecmaVersion: 6})
-test("for (; class {} / 1;);", {}, {ecmaVersion: 6})
-test("for (;; function () {} / 1);", {}, {ecmaVersion: 6})
-test("for (;; class {} / 1);", {}, {ecmaVersion: 6})
-
-for (const ecmaVersion of [5, 6]) {
-  test("a = (\r\n  b,\r\n  c\r\n)", {
-    type: "Program",
-    start: 0,
-    end: 19,
-    loc: {
-      start: {
-        line: 1,
-        column: 0
-      },
-      end: {
-        line: 4,
-        column: 1
-      }
-    },
-    body: [
-      {
-        type: "ExpressionStatement",
-        start: 0,
-        end: 19,
-        loc: {
-          start: {
-            line: 1,
-            column: 0
-          },
-          end: {
-            line: 4,
-            column: 1
-          }
-        },
-        expression: {
-          type: "AssignmentExpression",
-          start: 0,
-          end: 19,
-          loc: {
-            start: {
-              line: 1,
-              column: 0
-            },
-            end: {
-              line: 4,
-              column: 1
-            }
-          },
-          operator: "=",
-          left: {
-            type: "Identifier",
-            start: 0,
-            end: 1,
-            loc: {
-              start: {
-                line: 1,
-                column: 0
-              },
-              end: {
-                line: 1,
-                column: 1
-              }
-            },
-            name: "a"
-          },
-          right: {
-            type: "SequenceExpression",
-            start: 9,
-            end: 16,
-            loc: {
-              start: {
-                line: 2,
-                column: 2
-              },
-              end: {
-                line: 3,
-                column: 3
-              }
-            },
-            expressions: [
-              {
-                type: "Identifier",
-                start: 9,
-                end: 10,
-                loc: {
-                  start: {
-                    line: 2,
-                    column: 2
-                  },
-                  end: {
-                    line: 2,
-                    column: 3
-                  }
-                },
-                name: "b"
-              },
-              {
-                type: "Identifier",
-                start: 15,
-                end: 16,
-                loc: {
-                  start: {
-                    line: 3,
-                    column: 2
-                  },
-                  end: {
-                    line: 3,
-                    column: 3
-                  }
-                },
-                name: "c"
-              }
-            ]
-          }
-        }
-      }
-    ],
-  }, { ecmaVersion, locations: true })
-}
-
-test("'\u2028'", {
-  type: "Program",
-  body: [
-    {
-      type: "ExpressionStatement",
-      expression: {
-        type: "Literal",
-        loc: {
-          start: {
-            line: 1,
-            column: 0
-          },
-          end: {
-            line: 2,
-            column: 1
-          }
-        }
-      }
-    }
-  ]
-}, {ecmaVersion: 2020, locations: true})
-
-testFail("'\u2029'", "Unterminated string constant (1:0)", {ecmaVersion: 5})
-
-test("weird ? true : {} / 2", {
-  type: "Program",
-  start: 0,
-  end: 21,
-  loc: {
-    start: {
-      line: 1,
-      column: 0
-    },
-    end: {
-      line: 1,
-      column: 21
-    }
-  },
-  body: [
-    {
-      type: "ExpressionStatement",
-      start: 0,
-      end: 21,
-      loc: {
-        start: {
-          line: 1,
-          column: 0
-        },
-        end: {
-          line: 1,
-          column: 21
-        }
-      },
-      expression: {
-        type: "ConditionalExpression",
-        start: 0,
-        end: 21,
-        loc: {
-          start: {
-            line: 1,
-            column: 0
-          },
-          end: {
-            line: 1,
-            column: 21
-          }
-        },
-        test: {
-          type: "Identifier",
-          start: 0,
-          end: 5,
-          loc: {
-            start: {
-              line: 1,
-              column: 0
-            },
-            end: {
-              line: 1,
-              column: 5
-            }
-          },
-          name: "weird"
-        },
-        consequent: {
-          type: "Literal",
-          start: 8,
-          end: 12,
-          loc: {
-            start: {
-              line: 1,
-              column: 8
-            },
-            end: {
-              line: 1,
-              column: 12
-            }
-          },
-          value: true,
-          raw: "true"
-        },
-        alternate: {
-          type: "BinaryExpression",
-          start: 15,
-          end: 21,
-          loc: {
-            start: {
-              line: 1,
-              column: 15
-            },
-            end: {
-              line: 1,
-              column: 21
-            }
-          },
-          left: {
-            type: "ObjectExpression",
-            start: 15,
-            end: 17,
-            loc: {
-              start: {
-                line: 1,
-                column: 15
-              },
-              end: {
-                line: 1,
-                column: 17
-              }
-            },
-            properties: []
-          },
-          operator: "/",
-          right: {
-            type: "Literal",
-            start: 20,
-            end: 21,
-            loc: {
-              start: {
-                line: 1,
-                column: 20
-              },
-              end: {
-                line: 1,
-                column: 21
-              }
-            },
-            value: 2,
-            raw: "2"
-          }
-        }
-      }
-    }
-  ]
-}, {locations: true})
-
-test(`typeof async function f(){}
-/foo/g`, {
-  type: "Program",
-  start: 0,
-  end: 34,
-  loc: {
-    start: {
-      line: 1,
-      column: 0
-    },
-    end: {
-      line: 2,
-      column: 6
-    }
-  },
-  body: [
-    {
-      type: "ExpressionStatement",
-      start: 0,
-      end: 34,
-      loc: {
-        start: {
-          line: 1,
-          column: 0
-        },
-        end: {
-          line: 2,
-          column: 6
-        }
-      },
-      expression: {
-        type: "BinaryExpression",
-        start: 0,
-        end: 34,
-        loc: {
-          start: {
-            line: 1,
-            column: 0
-          },
-          end: {
-            line: 2,
-            column: 6
-          }
-        },
-        left: {
-          type: "BinaryExpression",
-          start: 0,
-          end: 32,
-          loc: {
-            start: {
-              line: 1,
-              column: 0
-            },
-            end: {
-              line: 2,
-              column: 4
-            }
-          },
-          left: {
-            type: "UnaryExpression",
-            start: 0,
-            end: 27,
-            loc: {
-              start: {
-                line: 1,
-                column: 0
-              },
-              end: {
-                line: 1,
-                column: 27
-              }
-            },
-            operator: "typeof",
-            prefix: true,
-            argument: {
-              type: "FunctionExpression",
-              start: 7,
-              end: 27,
-              loc: {
-                start: {
-                  line: 1,
-                  column: 7
-                },
-                end: {
-                  line: 1,
-                  column: 27
-                }
-              },
-              id: {
-                type: "Identifier",
-                start: 22,
-                end: 23,
-                loc: {
-                  start: {
-                    line: 1,
-                    column: 22
-                  },
-                  end: {
-                    line: 1,
-                    column: 23
-                  }
-                },
-                name: "f"
-              },
-              expression: false,
-              generator: false,
-              async: true,
-              params: [],
-              body: {
-                type: "BlockStatement",
-                start: 25,
-                end: 27,
-                loc: {
-                  start: {
-                    line: 1,
-                    column: 25
-                  },
-                  end: {
-                    line: 1,
-                    column: 27
-                  }
-                },
-                body: []
-              }
-            }
-          },
-          operator: "/",
-          right: {
-            type: "Identifier",
-            start: 29,
-            end: 32,
-            loc: {
-              start: {
-                line: 2,
-                column: 1
-              },
-              end: {
-                line: 2,
-                column: 4
-              }
-            },
-            name: "foo"
-          }
-        },
-        operator: "/",
-        right: {
-          type: "Identifier",
-          start: 33,
-          end: 34,
-          loc: {
-            start: {
-              line: 2,
-              column: 5
-            },
-            end: {
-              line: 2,
-              column: 6
-            }
-          },
-          name: "g"
-        }
-      }
-    }
-  ]
-}, { ecmaVersion: 8, locations: true })
-
-testFail(`typeof async function f(){}
-/foo/`, "Unexpected token (2:5)", { ecmaVersion: 8, locations: true })
