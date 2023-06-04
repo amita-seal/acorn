@@ -1,17 +1,21 @@
 import {types as tt} from "./tokentype"
 import {Parser} from "./state"
-import {lineBreak} from "./whitespace"
+import {lineBreak, skipWhiteSpace} from "./whitespace"
 
 const pp = Parser.prototype
 
 // ## Parser utilities
 
-// Test whether a statement node is the string literal `"use strict"`.
-
-pp.isUseStrict = function(stmt) {
-  return this.options.ecmaVersion >= 5 && stmt.type === "ExpressionStatement" &&
-    stmt.expression.type === "Literal" &&
-    stmt.expression.raw.slice(1, -1) === "use strict"
+const literal = /^(?:'((?:\\.|[^'])*?)'|"((?:\\.|[^"])*?)"|;)/
+pp.strictDirective = function(start) {
+  for (;;) {
+    skipWhiteSpace.lastIndex = start
+    start += skipWhiteSpace.exec(this.input)[0].length
+    let match = literal.exec(this.input.slice(start))
+    if (!match) return false
+    if ((match[1] || match[2]) === "use strict") return true
+    start += match[0].length
+  }
 }
 
 // Predicate that tests whether the next token is of the given
@@ -29,13 +33,15 @@ pp.eat = function(type) {
 // Tests whether parsed token is a contextual keyword.
 
 pp.isContextual = function(name) {
-  return this.type === tt.name && this.value === name
+  return this.type === tt.name && this.value === name && !this.containsEsc
 }
 
 // Consumes contextual keyword if possible.
 
 pp.eatContextual = function(name) {
-  return this.value === name && this.eat(tt.name)
+  if (!this.isContextual(name)) return false
+  this.next()
+  return true
 }
 
 // Asserts that following token is given contextual keyword.
@@ -67,11 +73,12 @@ pp.semicolon = function() {
   if (!this.eat(tt.semi) && !this.insertSemicolon()) this.unexpected()
 }
 
-pp.afterTrailingComma = function(tokType) {
-  if (this.type == tokType) {
+pp.afterTrailingComma = function(tokType, notNext) {
+  if (this.type === tokType) {
     if (this.options.onTrailingComma)
       this.options.onTrailingComma(this.lastTokStart, this.lastTokStartLoc)
-    this.next()
+    if (!notNext)
+      this.next()
     return true
   }
 }
@@ -89,21 +96,42 @@ pp.unexpected = function(pos) {
   this.raise(pos != null ? pos : this.start, "Unexpected token")
 }
 
-export class DestructuringErrors {
-  constructor() {
-    this.shorthandAssign = 0
-    this.trailingComma = 0
-  }
+export function DestructuringErrors() {
+  this.shorthandAssign =
+  this.trailingComma =
+  this.parenthesizedAssign =
+  this.parenthesizedBind =
+  this.doubleProto =
+    -1
 }
 
-pp.checkPatternErrors = function(refDestructuringErrors, andThrow) {
-  let trailing = refDestructuringErrors && refDestructuringErrors.trailingComma
-  if (!andThrow) return !!trailing
-  if (trailing) this.raise(trailing, "Comma is not permitted after the rest element")
+pp.checkPatternErrors = function(refDestructuringErrors, isAssign) {
+  if (!refDestructuringErrors) return
+  if (refDestructuringErrors.trailingComma > -1)
+    this.raiseRecoverable(refDestructuringErrors.trailingComma, "Comma is not permitted after the rest element")
+  let parens = isAssign ? refDestructuringErrors.parenthesizedAssign : refDestructuringErrors.parenthesizedBind
+  if (parens > -1) this.raiseRecoverable(parens, "Parenthesized pattern")
 }
 
 pp.checkExpressionErrors = function(refDestructuringErrors, andThrow) {
-  let pos = refDestructuringErrors && refDestructuringErrors.shorthandAssign
-  if (!andThrow) return !!pos
-  if (pos) this.raise(pos, "Shorthand property assignments are valid only in destructuring patterns")
+  if (!refDestructuringErrors) return false
+  let {shorthandAssign, doubleProto} = refDestructuringErrors
+  if (!andThrow) return shorthandAssign >= 0 || doubleProto >= 0
+  if (shorthandAssign >= 0)
+    this.raise(shorthandAssign, "Shorthand property assignments are valid only in destructuring patterns")
+  if (doubleProto >= 0)
+    this.raiseRecoverable(doubleProto, "Redefinition of __proto__ property")
+}
+
+pp.checkYieldAwaitInDefaultParams = function() {
+  if (this.yieldPos && (!this.awaitPos || this.yieldPos < this.awaitPos))
+    this.raise(this.yieldPos, "Yield expression cannot be a default value")
+  if (this.awaitPos)
+    this.raise(this.awaitPos, "Await expression cannot be a default value")
+}
+
+pp.isSimpleAssignTarget = function(expr) {
+  if (expr.type === "ParenthesizedExpression")
+    return this.isSimpleAssignTarget(expr.expression)
+  return expr.type === "Identifier" || expr.type === "MemberExpression"
 }

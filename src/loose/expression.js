@@ -1,6 +1,6 @@
 import {LooseParser} from "./state"
 import {isDummy} from "./parseutil"
-import {tokTypes as tt} from "acorn"
+import {tokTypes as tt} from "../index"
 
 const lp = LooseParser.prototype
 
@@ -45,7 +45,7 @@ lp.parseMaybeAssign = function(noIn) {
   if (this.toks.isContextual("yield")) {
     let node = this.startNode()
     this.next()
-    if (this.semicolon() || this.canInsertSemicolon() || (this.tok.type != tt.star && !this.tok.type.startsExpr)) {
+    if (this.semicolon() || this.canInsertSemicolon() || (this.tok.type !== tt.star && !this.tok.type.startsExpr)) {
       node.delegate = false
       node.argument = null
     } else {
@@ -88,7 +88,7 @@ lp.parseExprOps = function(noIn) {
 }
 
 lp.parseExprOp = function(left, start, minPrec, noIn, indent, line) {
-  if (this.curLineStart != line && this.curIndent < indent && this.tokenStartsLine()) return left
+  if (this.curLineStart !== line && this.curIndent < indent && this.tokenStartsLine()) return left
   let prec = this.tok.type.binop
   if (prec != null && (!noIn || this.tok.type !== tt._in)) {
     if (prec > minPrec) {
@@ -96,7 +96,7 @@ lp.parseExprOp = function(left, start, minPrec, noIn, indent, line) {
       node.left = left
       node.operator = this.tok.value
       this.next()
-      if (this.curLineStart != line && this.curIndent < indent && this.tokenStartsLine()) {
+      if (this.curLineStart !== line && this.curIndent < indent && this.tokenStartsLine()) {
         node.right = this.dummyIdent()
       } else {
         let rightStart = this.storeCurrentPos()
@@ -111,7 +111,12 @@ lp.parseExprOp = function(left, start, minPrec, noIn, indent, line) {
 
 lp.parseMaybeUnary = function(sawUnary) {
   let start = this.storeCurrentPos(), expr
-  if (this.tok.type.prefix) {
+  if (this.options.ecmaVersion >= 8 && this.toks.isContextual("await") &&
+    (this.inAsync || (!this.inFunction && this.options.allowAwaitOutsideFunction))
+  ) {
+    expr = this.parseAwait()
+    sawUnary = true
+  } else if (this.tok.type.prefix) {
     let node = this.startNode(), update = this.tok.type === tt.incDec
     if (!update) sawUnary = true
     node.operator = this.tok.value
@@ -155,23 +160,25 @@ lp.parseExprSubscripts = function() {
 
 lp.parseSubscripts = function(base, start, noCalls, startIndent, line) {
   for (;;) {
-    if (this.curLineStart != line && this.curIndent <= startIndent && this.tokenStartsLine()) {
-      if (this.tok.type == tt.dot && this.curIndent == startIndent)
+    if (this.curLineStart !== line && this.curIndent <= startIndent && this.tokenStartsLine()) {
+      if (this.tok.type === tt.dot && this.curIndent === startIndent)
         --startIndent
       else
         return base
     }
 
+    let maybeAsyncArrow = base.type === "Identifier" && base.name === "async" && !this.canInsertSemicolon()
+
     if (this.eat(tt.dot)) {
       let node = this.startNodeAt(start)
       node.object = base
-      if (this.curLineStart != line && this.curIndent <= startIndent && this.tokenStartsLine())
+      if (this.curLineStart !== line && this.curIndent <= startIndent && this.tokenStartsLine())
         node.property = this.dummyIdent()
       else
         node.property = this.parsePropertyAccessor() || this.dummyIdent()
       node.computed = false
       base = this.finishNode(node, "MemberExpression")
-    } else if (this.tok.type == tt.bracketL) {
+    } else if (this.tok.type === tt.bracketL) {
       this.pushCx()
       this.next()
       let node = this.startNodeAt(start)
@@ -181,12 +188,15 @@ lp.parseSubscripts = function(base, start, noCalls, startIndent, line) {
       this.popCx()
       this.expect(tt.bracketR)
       base = this.finishNode(node, "MemberExpression")
-    } else if (!noCalls && this.tok.type == tt.parenL) {
+    } else if (!noCalls && this.tok.type === tt.parenL) {
+      let exprList = this.parseExprList(tt.parenR)
+      if (maybeAsyncArrow && this.eat(tt.arrow))
+        return this.parseArrowExpression(this.startNodeAt(start), exprList, true)
       let node = this.startNodeAt(start)
       node.callee = base
-      node.arguments = this.parseExprList(tt.parenR)
+      node.arguments = exprList
       base = this.finishNode(node, "CallExpression")
-    } else if (this.tok.type == tt.backQuote) {
+    } else if (this.tok.type === tt.backQuote) {
       let node = this.startNodeAt(start)
       node.tag = base
       node.quasi = this.parseTemplate()
@@ -210,7 +220,16 @@ lp.parseExprAtom = function() {
   case tt.name:
     let start = this.storeCurrentPos()
     let id = this.parseIdent()
-    return this.eat(tt.arrow) ? this.parseArrowExpression(this.startNodeAt(start), [id]) : id
+    let isAsync = false
+    if (id.name === "async" && !this.canInsertSemicolon()) {
+      if (this.eat(tt._function))
+        return this.parseFunction(this.startNodeAt(start), false, true)
+      if (this.tok.type === tt.name) {
+        id = this.parseIdent()
+        isAsync = true
+      }
+    }
+    return this.eat(tt.arrow) ? this.parseArrowExpression(this.startNodeAt(start), [id], isAsync) : id
 
   case tt.regexp:
     node = this.startNode()
@@ -241,7 +260,11 @@ lp.parseExprAtom = function() {
     let inner = this.parseExpression()
     this.expect(tt.parenR)
     if (this.eat(tt.arrow)) {
-      return this.parseArrowExpression(this.startNodeAt(parenStart), inner.expressions || (isDummy(inner) ? [] : [inner]))
+      // (a,)=>a // SequenceExpression makes dummy in the last hole. Drop the dummy.
+      let params = inner.expressions || [inner]
+      if (params.length && isDummy(params[params.length - 1]))
+        params.pop()
+      return this.parseArrowExpression(this.startNodeAt(parenStart), params)
     }
     if (this.options.preserveParens) {
       let par = this.startNodeAt(parenStart)
@@ -259,7 +282,7 @@ lp.parseExprAtom = function() {
     return this.parseObj()
 
   case tt._class:
-    return this.parseClass()
+    return this.parseClass(false)
 
   case tt._function:
     node = this.startNode()
@@ -287,7 +310,7 @@ lp.parseNew = function() {
   }
   let start = this.storeCurrentPos()
   node.callee = this.parseSubscripts(this.parseExprAtom(), start, true, startIndent, line)
-  if (this.tok.type == tt.parenL) {
+  if (this.tok.type === tt.parenL) {
     node.arguments = this.parseExprList(tt.parenR)
   } else {
     node.arguments = []
@@ -297,9 +320,18 @@ lp.parseNew = function() {
 
 lp.parseTemplateElement = function() {
   let elem = this.startNode()
-  elem.value = {
-    raw: this.input.slice(this.tok.start, this.tok.end).replace(/\r\n?/g, '\n'),
-    cooked: this.tok.value
+
+  // The loose parser accepts invalid unicode escapes even in untagged templates.
+  if (this.tok.type === tt.invalidTemplate) {
+    elem.value = {
+      raw: this.tok.value,
+      cooked: null
+    }
+  } else {
+    elem.value = {
+      raw: this.input.slice(this.tok.start, this.tok.end).replace(/\r\n?/g, "\n"),
+      cooked: this.tok.value
+    }
   }
   this.next()
   elem.tail = this.tok.type === tt.backQuote
@@ -319,7 +351,7 @@ lp.parseTemplate = function() {
       curElt = this.parseTemplateElement()
     } else {
       curElt = this.startNode()
-      curElt.value = {cooked: '', raw: ''}
+      curElt.value = {cooked: "", raw: ""}
       curElt.tail = true
       this.finishNode(curElt, "TemplateElement")
     }
@@ -337,7 +369,13 @@ lp.parseObj = function() {
   this.eat(tt.braceL)
   if (this.curIndent + 1 < indent) { indent = this.curIndent; line = this.curLineStart }
   while (!this.closes(tt.braceR, indent, line)) {
-    let prop = this.startNode(), isGenerator, start
+    let prop = this.startNode(), isGenerator, isAsync, start
+    if (this.options.ecmaVersion >= 9 && this.eat(tt.ellipsis)) {
+      prop.argument = this.parseMaybeAssign()
+      node.properties.push(this.finishNode(prop, "SpreadElement"))
+      this.eat(tt.comma)
+      continue
+    }
     if (this.options.ecmaVersion >= 6) {
       start = this.storeCurrentPos()
       prop.method = false
@@ -345,6 +383,13 @@ lp.parseObj = function() {
       isGenerator = this.eat(tt.star)
     }
     this.parsePropertyName(prop)
+    if (this.toks.isAsyncProp(prop)) {
+      isAsync = true
+      isGenerator = this.options.ecmaVersion >= 9 && this.eat(tt.star)
+      this.parsePropertyName(prop)
+    } else {
+      isAsync = false
+    }
     if (isDummy(prop.key)) { if (isDummy(this.parseMaybeAssign())) this.next(); this.eat(tt.comma); continue }
     if (this.eat(tt.colon)) {
       prop.kind = "init"
@@ -352,10 +397,10 @@ lp.parseObj = function() {
     } else if (this.options.ecmaVersion >= 6 && (this.tok.type === tt.parenL || this.tok.type === tt.braceL)) {
       prop.kind = "init"
       prop.method = true
-      prop.value = this.parseMethod(isGenerator)
+      prop.value = this.parseMethod(isGenerator, isAsync)
     } else if (this.options.ecmaVersion >= 5 && prop.key.type === "Identifier" &&
                !prop.computed && (prop.key.name === "get" || prop.key.name === "set") &&
-               (this.tok.type != tt.comma && this.tok.type != tt.braceR)) {
+               (this.tok.type !== tt.comma && this.tok.type !== tt.braceR && this.tok.type !== tt.eq)) {
       prop.kind = prop.key.name
       this.parsePropertyName(prop)
       prop.value = this.parseMethod(false)
@@ -424,30 +469,33 @@ lp.initFunction = function(node) {
     node.generator = false
     node.expression = false
   }
+  if (this.options.ecmaVersion >= 8)
+    node.async = false
 }
 
 // Convert existing expression atom to assignable pattern
 // if possible.
 
 lp.toAssignable = function(node, binding) {
-  if (!node || node.type == "Identifier" || (node.type == "MemberExpression" && !binding)) {
+  if (!node || node.type === "Identifier" || (node.type === "MemberExpression" && !binding)) {
     // Okay
-  } else if (node.type == "ParenthesizedExpression") {
-    node.expression = this.toAssignable(node.expression, binding)
+  } else if (node.type === "ParenthesizedExpression") {
+    this.toAssignable(node.expression, binding)
   } else if (this.options.ecmaVersion < 6) {
     return this.dummyIdent()
-  } else if (node.type == "ObjectExpression") {
+  } else if (node.type === "ObjectExpression") {
     node.type = "ObjectPattern"
-    let props = node.properties
-    for (let i = 0; i < props.length; i++)
-      props[i].value = this.toAssignable(props[i].value, binding)
-  } else if (node.type == "ArrayExpression") {
+    for (let prop of node.properties)
+      this.toAssignable(prop, binding)
+  } else if (node.type === "ArrayExpression") {
     node.type = "ArrayPattern"
     this.toAssignableList(node.elements, binding)
-  } else if (node.type == "SpreadElement") {
+  } else if (node.type === "Property") {
+    this.toAssignable(node.value, binding)
+  } else if (node.type === "SpreadElement") {
     node.type = "RestElement"
-    node.argument = this.toAssignable(node.argument, binding)
-  } else if (node.type == "AssignmentExpression") {
+    this.toAssignable(node.argument, binding)
+  } else if (node.type === "AssignmentExpression") {
     node.type = "AssignmentPattern"
     delete node.operator
   } else {
@@ -457,8 +505,8 @@ lp.toAssignable = function(node, binding) {
 }
 
 lp.toAssignableList = function(exprList, binding) {
-  for (let i = 0; i < exprList.length; i++)
-    exprList[i] = this.toAssignable(exprList[i], binding)
+  for (let expr of exprList)
+    this.toAssignable(expr, binding)
   return exprList
 }
 
@@ -467,21 +515,40 @@ lp.parseFunctionParams = function(params) {
   return this.toAssignableList(params, true)
 }
 
-lp.parseMethod = function(isGenerator) {
-  let node = this.startNode()
+lp.parseMethod = function(isGenerator, isAsync) {
+  let node = this.startNode(), oldInAsync = this.inAsync, oldInFunction = this.inFunction
   this.initFunction(node)
+  if (this.options.ecmaVersion >= 6)
+    node.generator = !!isGenerator
+  if (this.options.ecmaVersion >= 8)
+    node.async = !!isAsync
+  this.inAsync = node.async
+  this.inFunction = true
   node.params = this.parseFunctionParams()
-  node.generator = isGenerator || false
-  node.expression = this.options.ecmaVersion >= 6 && this.tok.type !== tt.braceL
-  node.body = node.expression ? this.parseMaybeAssign() : this.parseBlock()
+  node.body = this.parseBlock()
+  this.toks.adaptDirectivePrologue(node.body.body)
+  this.inAsync = oldInAsync
+  this.inFunction = oldInFunction
   return this.finishNode(node, "FunctionExpression")
 }
 
-lp.parseArrowExpression = function(node, params) {
+lp.parseArrowExpression = function(node, params, isAsync) {
+  let oldInAsync = this.inAsync, oldInFunction = this.inFunction
   this.initFunction(node)
+  if (this.options.ecmaVersion >= 8)
+    node.async = !!isAsync
+  this.inAsync = node.async
+  this.inFunction = true
   node.params = this.toAssignableList(params, true)
   node.expression = this.tok.type !== tt.braceL
-  node.body = node.expression ? this.parseMaybeAssign() : this.parseBlock()
+  if (node.expression) {
+    node.body = this.parseMaybeAssign()
+  } else {
+    node.body = this.parseBlock()
+    this.toks.adaptDirectivePrologue(node.body.body)
+  }
+  this.inAsync = oldInAsync
+  this.inFunction = oldInFunction
   return this.finishNode(node, "ArrowFunctionExpression")
 }
 
@@ -511,4 +578,11 @@ lp.parseExprList = function(close, allowEmpty) {
     if (this.options.locations) this.last.loc.end = this.tok.loc.start
   }
   return elts
+}
+
+lp.parseAwait = function() {
+  let node = this.startNode()
+  this.next()
+  node.argument = this.parseMaybeUnary()
+  return this.finishNode(node, "AwaitExpression")
 }

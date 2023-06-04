@@ -16,11 +16,11 @@
 // walker, and state can be used to give this walked an initial
 // state.
 
-export function simple(node, visitors, base, state, override) {
-  if (!base) base = exports.base
+export function simple(node, visitors, baseVisitor, state, override) {
+  if (!baseVisitor) baseVisitor = base
   ;(function c(node, st, override) {
     let type = override || node.type, found = visitors[type]
-    base[type](node, st, c)
+    baseVisitor[type](node, st, c)
     if (found) found(node, st)
   })(node, state, override)
 }
@@ -28,14 +28,14 @@ export function simple(node, visitors, base, state, override) {
 // An ancestor walk keeps an array of ancestor nodes (including the
 // current node) and passes them to the callback as third parameter
 // (and also as state parameter when no other state is present).
-export function ancestor(node, visitors, base, state) {
-  if (!base) base = exports.base
+export function ancestor(node, visitors, baseVisitor, state) {
   let ancestors = []
+  if (!baseVisitor) baseVisitor = base
   ;(function c(node, st, override) {
     let type = override || node.type, found = visitors[type]
-    let isNew = node != ancestors[ancestors.length - 1]
+    let isNew = node !== ancestors[ancestors.length - 1]
     if (isNew) ancestors.push(node)
-    base[type](node, st, c)
+    baseVisitor[type](node, st, c)
     if (found) found(node, st || ancestors, ancestors)
     if (isNew) ancestors.pop()
   })(node, state)
@@ -46,16 +46,16 @@ export function ancestor(node, visitors, base, state) {
 // threaded through the walk, and can opt how and whether to walk
 // their child nodes (by calling their third argument on these
 // nodes).
-export function recursive(node, state, funcs, base, override) {
-  let visitor = funcs ? exports.make(funcs, base) : base
+export function recursive(node, state, funcs, baseVisitor, override) {
+  let visitor = funcs ? make(funcs, baseVisitor || undefined) : baseVisitor
   ;(function c(node, st, override) {
     visitor[override || node.type](node, st, c)
   })(node, state, override)
 }
 
 function makeTest(test) {
-  if (typeof test == "string")
-    return type => type == test
+  if (typeof test === "string")
+    return type => type === test
   else if (!test)
     return () => true
   else
@@ -66,20 +66,45 @@ class Found {
   constructor(node, state) { this.node = node; this.state = state }
 }
 
+// A full walk triggers the callback on each node
+export function full(node, callback, baseVisitor, state, override) {
+  if (!baseVisitor) baseVisitor = base
+  ;(function c(node, st, override) {
+    let type = override || node.type
+    baseVisitor[type](node, st, c)
+    if (!override) callback(node, st, type)
+  })(node, state, override)
+}
+
+// An fullAncestor walk is like an ancestor walk, but triggers
+// the callback on each node
+export function fullAncestor(node, callback, baseVisitor, state) {
+  if (!baseVisitor) baseVisitor = base
+  let ancestors = []
+  ;(function c(node, st, override) {
+    let type = override || node.type
+    let isNew = node !== ancestors[ancestors.length - 1]
+    if (isNew) ancestors.push(node)
+    baseVisitor[type](node, st, c)
+    if (!override) callback(node, st || ancestors, ancestors, type)
+    if (isNew) ancestors.pop()
+  })(node, state)
+}
+
 // Find a node with a given start, end, and type (all are optional,
 // null can be used as wildcard). Returns a {node, state} object, or
 // undefined when it doesn't find a matching node.
-export function findNodeAt(node, start, end, test, base, state) {
+export function findNodeAt(node, start, end, test, baseVisitor, state) {
+  if (!baseVisitor) baseVisitor = base
   test = makeTest(test)
-  if (!base) base = exports.base
   try {
-    ;(function c(node, st, override) {
+    (function c(node, st, override) {
       let type = override || node.type
       if ((start == null || node.start <= start) &&
           (end == null || node.end >= end))
-        base[type](node, st, c)
-      if ((start == null || node.start == start) &&
-          (end == null || node.end == end) &&
+        baseVisitor[type](node, st, c)
+      if ((start == null || node.start === start) &&
+          (end == null || node.end === end) &&
           test(type, node))
         throw new Found(node, st)
     })(node, state)
@@ -91,14 +116,14 @@ export function findNodeAt(node, start, end, test, base, state) {
 
 // Find the innermost node of a given type that contains the given
 // position. Interface similar to findNodeAt.
-export function findNodeAround(node, pos, test, base, state) {
+export function findNodeAround(node, pos, test, baseVisitor, state) {
   test = makeTest(test)
-  if (!base) base = exports.base
+  if (!baseVisitor) baseVisitor = base
   try {
-    ;(function c(node, st, override) {
+    (function c(node, st, override) {
       let type = override || node.type
       if (node.start > pos || node.end < pos) return
-      base[type](node, st, c)
+      baseVisitor[type](node, st, c)
       if (test(type, node)) throw new Found(node, st)
     })(node, state)
   } catch (e) {
@@ -108,15 +133,15 @@ export function findNodeAround(node, pos, test, base, state) {
 }
 
 // Find the outermost matching node after a given position.
-export function findNodeAfter(node, pos, test, base, state) {
+export function findNodeAfter(node, pos, test, baseVisitor, state) {
   test = makeTest(test)
-  if (!base) base = exports.base
+  if (!baseVisitor) baseVisitor = base
   try {
-    ;(function c(node, st, override) {
+    (function c(node, st, override) {
       if (node.end < pos) return
       let type = override || node.type
       if (node.start >= pos && test(type, node)) throw new Found(node, st)
-      base[type](node, st, c)
+      baseVisitor[type](node, st, c)
     })(node, state)
   } catch (e) {
     if (e instanceof Found) return e
@@ -125,16 +150,16 @@ export function findNodeAfter(node, pos, test, base, state) {
 }
 
 // Find the outermost matching node before a given position.
-export function findNodeBefore(node, pos, test, base, state) {
+export function findNodeBefore(node, pos, test, baseVisitor, state) {
   test = makeTest(test)
-  if (!base) base = exports.base
+  if (!baseVisitor) baseVisitor = base
   let max
   ;(function c(node, st, override) {
     if (node.start > pos) return
     let type = override || node.type
     if (node.end <= pos && (!max || max.node.end < node.end) && test(type, node))
       max = new Found(node, st)
-    base[type](node, st, c)
+    baseVisitor[type](node, st, c)
   })(node, state)
   return max
 }
@@ -148,10 +173,9 @@ const create = Object.create || function(proto) {
 
 // Used to create a custom walker. Will fill in all missing node
 // type properties with the defaults.
-export function make(funcs, base) {
-  if (!base) base = exports.base
-  let visitor = create(base)
-  for (var type in funcs) visitor[type] = funcs[type]
+export function make(funcs, baseVisitor) {
+  let visitor = create(baseVisitor || base)
+  for (let type in funcs) visitor[type] = funcs[type]
   return visitor
 }
 
@@ -163,8 +187,8 @@ function ignore(_node, _st, _c) {}
 export const base = {}
 
 base.Program = base.BlockStatement = (node, st, c) => {
-  for (let i = 0; i < node.body.length; ++i)
-    c(node.body[i], st, "Statement")
+  for (let stmt of node.body)
+    c(stmt, st, "Statement")
 }
 base.Statement = skipThrough
 base.EmptyStatement = ignore
@@ -183,14 +207,18 @@ base.WithStatement = (node, st, c) => {
 }
 base.SwitchStatement = (node, st, c) => {
   c(node.discriminant, st, "Expression")
-  for (let i = 0; i < node.cases.length; ++i) {
-    let cs = node.cases[i]
+  for (let cs of node.cases) {
     if (cs.test) c(cs.test, st, "Expression")
-    for (let j = 0; j < cs.consequent.length; ++j)
-      c(cs.consequent[j], st, "Statement")
+    for (let cons of cs.consequent)
+      c(cons, st, "Statement")
   }
 }
-base.ReturnStatement = base.YieldExpression = (node, st, c) => {
+base.SwitchCase = (node, st, c) => {
+  if (node.test) c(node.test, st, "Expression")
+  for (let cons of node.consequent)
+    c(cons, st, "Statement")
+}
+base.ReturnStatement = base.YieldExpression = base.AwaitExpression = (node, st, c) => {
   if (node.argument) c(node.argument, st, "Expression")
 }
 base.ThrowStatement = base.SpreadElement =
@@ -201,7 +229,7 @@ base.TryStatement = (node, st, c) => {
   if (node.finalizer) c(node.finalizer, st, "Statement")
 }
 base.CatchClause = (node, st, c) => {
-  c(node.param, st, "Pattern")
+  if (node.param) c(node.param, st, "Pattern")
   c(node.body, st, "ScopeBody")
 }
 base.WhileStatement = base.DoWhileStatement = (node, st, c) => {
@@ -220,15 +248,15 @@ base.ForInStatement = base.ForOfStatement = (node, st, c) => {
   c(node.body, st, "Statement")
 }
 base.ForInit = (node, st, c) => {
-  if (node.type == "VariableDeclaration") c(node, st)
+  if (node.type === "VariableDeclaration") c(node, st)
   else c(node, st, "Expression")
 }
 base.DebuggerStatement = ignore
 
 base.FunctionDeclaration = (node, st, c) => c(node, st, "Function")
 base.VariableDeclaration = (node, st, c) => {
-  for (let i = 0; i < node.declarations.length; ++i)
-    c(node.declarations[i], st)
+  for (let decl of node.declarations)
+    c(decl, st)
 }
 base.VariableDeclarator = (node, st, c) => {
   c(node.id, st, "Pattern")
@@ -237,8 +265,8 @@ base.VariableDeclarator = (node, st, c) => {
 
 base.Function = (node, st, c) => {
   if (node.id) c(node.id, st, "Pattern")
-  for (let i = 0; i < node.params.length; i++)
-    c(node.params[i], st, "Pattern")
+  for (let param of node.params)
+    c(param, st, "Pattern")
   c(node.body, st, node.expression ? "ScopeExpression" : "ScopeBody")
 }
 // FIXME drop these node types in next major version
@@ -247,9 +275,9 @@ base.ScopeBody = (node, st, c) => c(node, st, "Statement")
 base.ScopeExpression = (node, st, c) => c(node, st, "Expression")
 
 base.Pattern = (node, st, c) => {
-  if (node.type == "Identifier")
+  if (node.type === "Identifier")
     c(node, st, "VariablePattern")
-  else if (node.type == "MemberExpression")
+  else if (node.type === "MemberExpression")
     c(node, st, "MemberPattern")
   else
     c(node, st)
@@ -257,33 +285,37 @@ base.Pattern = (node, st, c) => {
 base.VariablePattern = ignore
 base.MemberPattern = skipThrough
 base.RestElement = (node, st, c) => c(node.argument, st, "Pattern")
-base.ArrayPattern =  (node, st, c) => {
-  for (let i = 0; i < node.elements.length; ++i) {
-    let elt = node.elements[i]
+base.ArrayPattern = (node, st, c) => {
+  for (let elt of node.elements) {
     if (elt) c(elt, st, "Pattern")
   }
 }
 base.ObjectPattern = (node, st, c) => {
-  for (let i = 0; i < node.properties.length; ++i)
-    c(node.properties[i].value, st, "Pattern")
+  for (let prop of node.properties) {
+    if (prop.type === "Property") {
+      if (prop.computed) c(prop.key, st, "Expression")
+      c(prop.value, st, "Pattern")
+    } else if (prop.type === "RestElement") {
+      c(prop.argument, st, "Pattern")
+    }
+  }
 }
 
 base.Expression = skipThrough
 base.ThisExpression = base.Super = base.MetaProperty = ignore
 base.ArrayExpression = (node, st, c) => {
-  for (let i = 0; i < node.elements.length; ++i) {
-    let elt = node.elements[i]
+  for (let elt of node.elements) {
     if (elt) c(elt, st, "Expression")
   }
 }
 base.ObjectExpression = (node, st, c) => {
-  for (let i = 0; i < node.properties.length; ++i)
-    c(node.properties[i], st)
+  for (let prop of node.properties)
+    c(prop, st)
 }
 base.FunctionExpression = base.ArrowFunctionExpression = base.FunctionDeclaration
 base.SequenceExpression = base.TemplateLiteral = (node, st, c) => {
-  for (let i = 0; i < node.expressions.length; ++i)
-    c(node.expressions[i], st, "Expression")
+  for (let expr of node.expressions)
+    c(expr, st, "Expression")
 }
 base.UnaryExpression = base.UpdateExpression = (node, st, c) => {
   c(node.argument, st, "Expression")
@@ -303,8 +335,9 @@ base.ConditionalExpression = (node, st, c) => {
 }
 base.NewExpression = base.CallExpression = (node, st, c) => {
   c(node.callee, st, "Expression")
-  if (node.arguments) for (let i = 0; i < node.arguments.length; ++i)
-    c(node.arguments[i], st, "Expression")
+  if (node.arguments)
+    for (let arg of node.arguments)
+      c(arg, st, "Expression")
 }
 base.MemberExpression = (node, st, c) => {
   c(node.object, st, "Expression")
@@ -312,29 +345,32 @@ base.MemberExpression = (node, st, c) => {
 }
 base.ExportNamedDeclaration = base.ExportDefaultDeclaration = (node, st, c) => {
   if (node.declaration)
-    c(node.declaration, st, node.type == "ExportNamedDeclaration" || node.declaration.id ? "Statement" : "Expression")
+    c(node.declaration, st, node.type === "ExportNamedDeclaration" || node.declaration.id ? "Statement" : "Expression")
   if (node.source) c(node.source, st, "Expression")
 }
 base.ExportAllDeclaration = (node, st, c) => {
   c(node.source, st, "Expression")
 }
 base.ImportDeclaration = (node, st, c) => {
-  for (let i = 0; i < node.specifiers.length; i++)
-    c(node.specifiers[i], st)
+  for (let spec of node.specifiers)
+    c(spec, st)
   c(node.source, st, "Expression")
 }
 base.ImportSpecifier = base.ImportDefaultSpecifier = base.ImportNamespaceSpecifier = base.Identifier = base.Literal = ignore
 
 base.TaggedTemplateExpression = (node, st, c) => {
   c(node.tag, st, "Expression")
-  c(node.quasi, st)
+  c(node.quasi, st, "Expression")
 }
 base.ClassDeclaration = base.ClassExpression = (node, st, c) => c(node, st, "Class")
 base.Class = (node, st, c) => {
   if (node.id) c(node.id, st, "Pattern")
   if (node.superClass) c(node.superClass, st, "Expression")
-  for (let i = 0; i < node.body.body.length; i++)
-    c(node.body.body[i], st)
+  c(node.body, st)
+}
+base.ClassBody = (node, st, c) => {
+  for (let elt of node.body)
+    c(elt, st)
 }
 base.MethodDefinition = base.Property = (node, st, c) => {
   if (node.computed) c(node.key, st, "Expression")

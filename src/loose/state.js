@@ -1,4 +1,6 @@
-import {tokenizer, SourceLocation, tokTypes as tt, Node, lineBreak, isNewLine} from "acorn"
+import {tokenizer, SourceLocation, tokTypes as tt, Node, lineBreak, isNewLine} from "../index"
+
+function noop() {}
 
 // Registered plugins
 export const pluginsLoose = {}
@@ -9,6 +11,8 @@ export class LooseParser {
     this.options = this.toks.options
     this.input = this.toks.input
     this.tok = this.last = {type: tt.eof, start: 0, end: 0}
+    this.tok.validateRegExpFlags = noop
+    this.tok.validateRegExpPattern = noop
     if (this.options.locations) {
       let here = this.toks.curPosition()
       this.tok.loc = new SourceLocation(this.toks, here, here)
@@ -18,6 +22,8 @@ export class LooseParser {
     this.curIndent = 0
     this.curLineStart = 0
     this.nextLineStart = this.lineEnd(this.curLineStart) + 1
+    this.inAsync = false
+    this.inFunction = false
     // Load plugins
     this.options.pluginsLoose = options.pluginsLoose || {}
     this.loadPlugins(this.options.pluginsLoose)
@@ -102,7 +108,7 @@ export class LooseParser {
   expect(type) {
     if (this.eat(type)) return true
     for (let i = 1; i <= 2; i++) {
-      if (this.lookAhead(i).type == type) {
+      if (this.lookAhead(i).type === type) {
         for (let j = 0; j < i; j++) this.next()
         return true
       }
@@ -133,7 +139,7 @@ export class LooseParser {
 
   closes(closeTok, indent, line, blockHeuristic) {
     if (this.tok.type === closeTok || this.tok.type === tt.eof) return true
-    return line != this.curLineStart && this.curIndent < indent && this.tokenStartsLine() &&
+    return line !== this.curLineStart && this.curIndent < indent && this.tokenStartsLine() &&
       (!blockHeuristic || this.nextLineStart >= this.input.length ||
        this.indentationAfter(this.nextLineStart) < indent)
   }
@@ -156,5 +162,10 @@ export class LooseParser {
       if (!plugin) throw new Error("Plugin '" + name + "' not found")
       plugin(this, pluginConfigs[name])
     }
+  }
+
+  parse() {
+    this.next()
+    return this.parseTopLevel()
   }
 }

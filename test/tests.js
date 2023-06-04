@@ -403,24 +403,24 @@ test("(1 + 2 ) * 3", {
   preserveParens: true
 });
 
-test("(x) = 23", {
+test("(x = 23)", {
   body: [
     {
       expression: {
-        operator: "=",
-        left: {
-          expression: {
+        type: "ParenthesizedExpression",
+        expression: {
+          type: "AssignmentExpression",
+          operator: "=",
+          left: {
             name: "x",
             type: "Identifier",
           },
-          type: "ParenthesizedExpression",
+          right: {
+            value: 23,
+            raw: "23",
+            type: "Literal",
+          },
         },
-        right: {
-          value: 23,
-          raw: "23",
-          type: "Literal",
-        },
-        type: "AssignmentExpression",
       },
       type: "ExpressionStatement",
     }
@@ -7768,78 +7768,7 @@ test("var x = /=([^=\\s])+/g", {
   }
 });
 
-test("var x = /[P QR]/\\u0067", {
-  type: "Program",
-  body: [
-    {
-      type: "VariableDeclaration",
-      declarations: [
-        {
-          type: "VariableDeclarator",
-          id: {
-            type: "Identifier",
-            name: "x",
-            loc: {
-              start: {
-                line: 1,
-                column: 4
-              },
-              end: {
-                line: 1,
-                column: 5
-              }
-            }
-          },
-          init: {
-            type: "Literal",
-            value: /[P QR]/g,
-            loc: {
-              start: {
-                line: 1,
-                column: 8
-              },
-              end: {
-                line: 1,
-                column: 22
-              }
-            }
-          },
-          loc: {
-            start: {
-              line: 1,
-              column: 4
-            },
-            end: {
-              line: 1,
-              column: 22
-            }
-          }
-        }
-      ],
-      kind: "var",
-      loc: {
-        start: {
-          line: 1,
-          column: 0
-        },
-        end: {
-          line: 1,
-          column: 22
-        }
-      }
-    }
-  ],
-  loc: {
-    start: {
-      line: 1,
-      column: 0
-    },
-    end: {
-      line: 1,
-      column: 22
-    }
-  }
-});
+testFail("var x = /[P QR]/\\u0067", "Unexpected token (1:16)");
 
 test("new Button", {
   type: "Program",
@@ -19672,6 +19601,9 @@ test("for (var x in list) process(x);", {
     }
   }
 });
+testFail("var x; for (x = 0 in list) process(x);", "Invalid assignment in for-in loop head (1:12)", { ecmaVersion: 6 })
+testFail("'use strict'; for (var x = 0 in list) process(x);", "Invalid assignment in for-in loop head (1:19)")
+testFail("for (var [x] = 0 in list) process(x);", "Invalid assignment in for-in loop head (1:5)", { ecmaVersion: 6 })
 
 test("for (var x = 42 in list) process(x);", {
   type: "Program",
@@ -20718,6 +20650,57 @@ test("done: while (true) { break done; }", {
       column: 34
     }
   }
+});
+
+test("done: switch (a) { default: break done }", {
+  "type": "Program",
+  "start": 0,
+  "end": 40,
+  "body": [
+    {
+      "type": "LabeledStatement",
+      "start": 0,
+      "end": 40,
+      "body": {
+        "type": "SwitchStatement",
+        "start": 6,
+        "end": 40,
+        "discriminant": {
+          "type": "Identifier",
+          "start": 14,
+          "end": 15,
+          "name": "a"
+        },
+        "cases": [
+          {
+            "type": "SwitchCase",
+            "start": 19,
+            "end": 38,
+            "consequent": [
+              {
+                "type": "BreakStatement",
+                "start": 28,
+                "end": 38,
+                "label": {
+                  "type": "Identifier",
+                  "start": 34,
+                  "end": 38,
+                  "name": "done"
+                }
+              }
+            ],
+            "test": null
+          }
+        ]
+      },
+      "label": {
+        "type": "Identifier",
+        "start": 0,
+        "end": 4,
+        "name": "done"
+      }
+    }
+  ]
 });
 
 test("target1: target2: while (true) { continue target1; }", {});
@@ -26387,6 +26370,55 @@ test("foo: if (true) break foo;", {
   ]
 });
 
+test("a: { b: switch(x) {} }", {
+  "type": "Program",
+  "start": 0,
+  "end": 22,
+  "body": [
+    {
+      "type": "LabeledStatement",
+      "start": 0,
+      "end": 22,
+      "body": {
+        "type": "BlockStatement",
+        "start": 3,
+        "end": 22,
+        "body": [
+          {
+            "type": "LabeledStatement",
+            "start": 5,
+            "end": 20,
+            "body": {
+              "type": "SwitchStatement",
+              "start": 8,
+              "end": 20,
+              "discriminant": {
+                "type": "Identifier",
+                "start": 15,
+                "end": 16,
+                "name": "x"
+              },
+              "cases": []
+            },
+            "label": {
+              "type": "Identifier",
+              "start": 5,
+              "end": 6,
+              "name": "b"
+            }
+          }
+        ]
+      },
+      "label": {
+        "type": "Identifier",
+        "start": 0,
+        "end": 1,
+        "name": "a"
+      }
+    }
+  ]
+});
+
 test("(function () {\n 'use strict';\n '\0';\n}())", {
   type: "Program",
   loc: {
@@ -26945,11 +26977,11 @@ testFail("3x0",
 testFail("0x",
          "Expected number in radix 16 (1:2)");
 
-testFail("09",
-         "Invalid number (1:0)");
+testFail("'use strict'; 09",
+         "Invalid number (1:14)");
 
-testFail("018",
-         "Invalid number (1:0)");
+testFail("'use strict'; 018",
+         "Invalid number (1:14)");
 
 testFail("01a",
          "Identifier directly after number (1:2)");
@@ -26988,7 +27020,7 @@ testFail("func() = 4",
          "Assigning to rvalue (1:0)");
 
 testFail("(1 + 1) = 10",
-         "Assigning to rvalue (1:1)");
+         "Parenthesized pattern (1:0)");
 
 testFail("1++",
          "Assigning to rvalue (1:0)");
@@ -27003,7 +27035,7 @@ testFail("--1",
          "Assigning to rvalue (1:2)");
 
 testFail("for((1 + 1) in list) process(x);",
-         "Assigning to rvalue (1:5)");
+         "Parenthesized pattern (1:4)");
 
 testFail("[",
          "Unexpected token (1:1)");
@@ -27027,7 +27059,7 @@ testFail("var x = \"\n",
          "Unterminated string constant (1:8)");
 
 testFail("var if = 42",
-         "Unexpected token (1:4)");
+         "Unexpected keyword 'if' (1:4)");
 
 testFail("i + 2 = 42",
          "Assigning to rvalue (1:0)");
@@ -27098,28 +27130,28 @@ testFail("function t(...rest, b) { }",
          { ecmaVersion: 6 });
 
 testFail("function t(if) { }",
-         "Unexpected token (1:11)");
+         "Unexpected keyword 'if' (1:11)");
 
 testFail("function t(true) { }",
-         "Unexpected token (1:11)");
+         "Unexpected keyword 'true' (1:11)");
 
 testFail("function t(false) { }",
-         "Unexpected token (1:11)");
+         "Unexpected keyword 'false' (1:11)");
 
 testFail("function t(null) { }",
-         "Unexpected token (1:11)");
+         "Unexpected keyword 'null' (1:11)");
 
 testFail("function null() { }",
-         "Unexpected token (1:9)");
+         "Unexpected keyword 'null' (1:9)");
 
 testFail("function true() { }",
-         "Unexpected token (1:9)");
+         "Unexpected keyword 'true' (1:9)");
 
 testFail("function false() { }",
-         "Unexpected token (1:9)");
+         "Unexpected keyword 'false' (1:9)");
 
 testFail("function if() { }",
-         "Unexpected token (1:9)");
+         "Unexpected keyword 'if' (1:9)");
 
 testFail("a b;",
          "Unexpected token (1:2)");
@@ -27310,6 +27342,8 @@ testFail("x: while (true) { x: while (true) { } }",
 testFail("(function () { 'use strict'; delete i; }())",
          "Deleting local variable in strict mode (1:29)");
 
+testFail("function x() { '\\12'; 'use strict'; }", "Octal literal in strict mode (1:16)")
+
 testFail("(function () { 'use strict'; with (i); }())",
          "'with' in strict mode (1:29)");
 
@@ -27490,7 +27524,7 @@ testFail("(function a(package) { \"use strict\"; })",
 testFail("\"use strict\";function foo(){\"use strict\";}function bar(){var v = 015}",
          "Invalid number (1:65)");
 
-testFail("var this = 10;", "Unexpected token (1:4)");
+testFail("var this = 10;", "Unexpected keyword 'this' (1:4)");
 
 testFail("throw\n10;", "Illegal newline after throw (1:5)");
 
@@ -27509,7 +27543,11 @@ testFail("for(const x = 0;;);", "The keyword 'const' is reserved (1:4)");
 
 testFail("for(let x = 0;;);", "Unexpected token (1:8)");
 
-testFail("function a(b = c) {}", "Unexpected token (1:13)")
+testFail("function a(b = c) {}", "Unexpected token (1:13)");
+
+testFail("switch (x) { something }", "Unexpected token (1:13)");
+
+testFail("`abc`", "Unexpected character '`' (1:0)", {ecmaVersion: 5});
 
 test("let++", {
   type: "Program",
@@ -28964,7 +29002,7 @@ test('var x = (1 + 2)', {}, {
       }
     },
     {
-      type: {binop: 9, prefix: true, beforeExpr: true},
+      type: tokTypes.plusMin,
       value: "+",
       loc: {
         start: {line: 1, column: 11},
@@ -29000,7 +29038,7 @@ test('var x = (1 + 2)', {}, {
 
 test("function f(f) { 'use strict'; }", {});
 
-// https://github.com/ternjs/acorn/issues/180
+// https://github.com/acornjs/acorn/issues/180
 test("#!/usr/bin/node\n;", {}, {
   allowHashBang: true,
   onComment: [{
@@ -29011,7 +29049,7 @@ test("#!/usr/bin/node\n;", {}, {
   }]
 });
 
-// https://github.com/ternjs/acorn/issues/204
+// https://github.com/acornjs/acorn/issues/204
 test("(function () {} / 1)", {
   type: "Program",
   body: [{
@@ -29056,7 +29094,7 @@ test("function f() {} / 1 /", {
   ]
 });
 
-// https://github.com/ternjs/acorn/issues/320
+// https://github.com/acornjs/acorn/issues/320
 
 test("do /x/; while (false);", {
   type: "Program",
@@ -29100,13 +29138,13 @@ testAssert("[1,2,] + {foo: 1,}", function() {
 }, {onTrailingComma: function(pos) { trailingCommas.push(pos); },
     loose: false})
 
-// https://github.com/ternjs/acorn/issues/275
+// https://github.com/acornjs/acorn/issues/275
 
 testFail("({ get prop(x) {} })", "getter should have no params (1:11)");
 testFail("({ set prop() {} })", "setter should have exactly one param (1:11)");
 testFail("({ set prop(x, y) {} })", "setter should have exactly one param (1:11)");
 
-// https://github.com/ternjs/acorn/issues/363
+// https://github.com/acornjs/acorn/issues/363
 
 test("/[a-z]/gim", {
   type: "Program",
@@ -29127,3 +29165,151 @@ test("/[a-z]/gim", {
 testFail("/[a-z]/u", "Invalid regular expression flag (1:1)");
 testFail("/[a-z]/y", "Invalid regular expression flag (1:1)");
 testFail("/[a-z]/s", "Invalid regular expression flag (1:1)");
+testFail("/a/gg", "Duplicate regular expression flag (1:1)");
+
+testFail("function(){}", "Unexpected token (1:8)");
+
+test("0123. in/foo/i", {
+  "type": "Program",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "BinaryExpression",
+        "left": {
+          "type": "BinaryExpression",
+          "left": {
+            "type": "MemberExpression",
+            "object": {
+              "type": "Literal",
+              "value": 83,
+              "raw": "0123"
+            },
+            "property": {
+              "type": "Identifier",
+              "name": "in"
+            },
+            "computed": false
+          },
+          "operator": "/",
+          "right": {
+            "type": "Identifier",
+            "name": "foo"
+          }
+        },
+        "operator": "/",
+        "right": {
+          "type": "Identifier",
+          "name": "i"
+        }
+      }
+    }
+  ]
+})
+
+test("0128", {
+  "type": "Program",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": 128,
+        "raw": "0128"
+      }
+    }
+  ]
+})
+
+testFail("07.5", "Unexpected token (1:2)")
+
+test("08.5", {
+  "type": "Program",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": 8.5,
+        "raw": "08.5"
+      }
+    }
+  ]
+})
+
+test("undefined", {}, { ecmaVersion: 8 })
+
+testFail("\\u{74}rue", "Escape sequence in keyword true (1:0)", {ecmaVersion: 6})
+testFail("export { X \\u0061s Y }", "Unexpected token (1:11)", {ecmaVersion: 7, sourceType: "module"})
+testFail("import X fro\\u006d 'x'", "Unexpected token (1:9)", {ecmaVersion: 7, sourceType: "module"})
+testFail("le\\u0074 x = 5", "Unexpected token (1:9)", {ecmaVersion: 6})
+testFail("(function* () { y\\u0069eld 10 })", "Can not use 'yield' as identifier inside a generator (1:16)", {ecmaVersion: 6})
+testFail("(async function() { aw\\u0061it x })", "Can not use 'await' as identifier inside an async function (1:20)", {ecmaVersion: 8})
+testFail("(\\u0061sync function() { await x })", "Unexpected token (1:12)", {ecmaVersion: 8})
+testFail("(\\u0061sync () => { await x })", "Unexpected token (1:15)", {ecmaVersion: 8})
+testFail("\\u0061sync x => { await x }", "Unexpected token (1:11)", {ecmaVersion: 8})
+testFail("class X { \\u0061sync x() { await x } }", "Unexpected token (1:21)", {ecmaVersion: 8})
+testFail("class X { static \\u0061sync x() { await x } }", "Unexpected token (1:28)", {ecmaVersion: 8})
+testFail("({ ge\\u0074 x() {} })", "Unexpected token (1:12)")
+testFail("export \\u0061sync function y() { await x }", "Unexpected token (1:7)", {ecmaVersion: 8, sourceType: "module"})
+testFail("export default \\u0061sync function () { await x }", "Unexpected token (1:26)", {ecmaVersion: 8, sourceType: "module"})
+test("(\\u0061sync ())", {
+  "type": "Program",
+  "start": 0,
+  "end": 15,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 0,
+      "end": 15,
+      "expression": {
+        "type": "CallExpression",
+        "start": 1,
+        "end": 14,
+        "callee": {
+          "type": "Identifier",
+          "start": 1,
+          "end": 11,
+          "name": "async"
+        },
+        "arguments": []
+      }
+    }
+  ],
+  "sourceType": "script"
+}, {ecmaVersion: 8})
+testFail("({ \\u0061sync x() { await x } })", "Unexpected token (1:14)", {ecmaVersion: 8})
+testFail("for (x \\u006ff y) {}", "Unexpected token (1:7)", {ecmaVersion: 6})
+testFail("function x () { new.ta\\u0072get }", "The only valid meta property for new is new.target (1:20)", {ecmaVersion: 6})
+testFail("class X { st\\u0061tic y() {} }", "Unexpected token (1:22)", {ecmaVersion: 6})
+
+testFail("(x=1)=2", "Parenthesized pattern (1:0)")
+
+test("(foo = [])[0] = 4;", {})
+
+test("for ((foo = []).bar in {}) {}", {})
+
+test("((b), a=1)", {})
+
+test("(x) = 1", {})
+
+testFail("try {} catch (foo) { var foo; }", "Identifier 'foo' has already been declared (1:25)")
+testFail("try {} catch (foo) { let foo; }", "Identifier 'foo' has already been declared (1:25)", {ecmaVersion: 6})
+testFail("try {} catch (foo) { try {} catch (_) { var foo; } }", "Identifier 'foo' has already been declared (1:44)")
+testFail("try {} catch ([foo]) { var foo; }", "Identifier 'foo' has already been declared (1:27)", {ecmaVersion: 6})
+testFail("try {} catch ({ foo }) { var foo; }", "Identifier 'foo' has already been declared (1:29)", {ecmaVersion: 6})
+testFail("try {} catch ([foo, foo]) {}", "Identifier 'foo' has already been declared (1:20)", {ecmaVersion: 6})
+testFail("try {} catch ({ a: foo, b: { c: [foo] } }) {}", "Identifier 'foo' has already been declared (1:33)", {ecmaVersion: 6})
+testFail("let foo; try {} catch (foo) {} let foo;", "Identifier 'foo' has already been declared (1:35)", {ecmaVersion: 6})
+testFail("try {} catch (foo) { function foo() {} }", "Identifier 'foo' has already been declared (1:30)")
+
+test("try {} catch (foo) {} var foo;", {})
+test("try {} catch (foo) {} let foo;", {}, {ecmaVersion: 6})
+test("try {} catch (foo) { { let foo; } }", {}, {ecmaVersion: 6})
+test("try {} catch (foo) { function x() { var foo; } }", {}, {ecmaVersion: 6})
+test("try {} catch (foo) { function x(foo) {} }", {}, {ecmaVersion: 6})
+
+test("'use strict'; let foo = function foo() {}", {}, {ecmaVersion: 6})
+
+test("/**/ --> comment\n", {})
+test("x.class++", {})

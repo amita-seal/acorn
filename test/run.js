@@ -6,6 +6,17 @@
     require("./tests.js");
     require("./tests-harmony.js");
     require("./tests-es7.js");
+    require("./tests-asyncawait.js");
+    require("./tests-await-top-level.js");
+    require("./tests-trailing-commas-in-func.js");
+    require("./tests-template-literal-revision.js");
+    require("./tests-directive.js");
+    require("./tests-rest-spread-properties.js");
+    require("./tests-async-iteration.js");
+    require("./tests-regexp.js");
+    require("./tests-regexp-2018.js");
+    require("./tests-json-superset.js");
+    require("./tests-optional-catch-binding.js");
     acorn = require("../dist/acorn")
     require("../dist/acorn_loose")
   } else {

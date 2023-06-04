@@ -7,45 +7,69 @@ const pp = Parser.prototype
 // Convert existing expression atom to assignable pattern
 // if possible.
 
-pp.toAssignable = function(node, isBinding) {
+pp.toAssignable = function(node, isBinding, refDestructuringErrors) {
   if (this.options.ecmaVersion >= 6 && node) {
     switch (node.type) {
     case "Identifier":
+      if (this.inAsync && node.name === "await")
+        this.raise(node.start, "Can not use 'await' as identifier inside an async function")
+      break
+
     case "ObjectPattern":
     case "ArrayPattern":
+    case "RestElement":
       break
 
     case "ObjectExpression":
       node.type = "ObjectPattern"
-      for (let i = 0; i < node.properties.length; i++) {
-        let prop = node.properties[i]
-        if (prop.kind !== "init") this.raise(prop.key.start, "Object pattern can't contain getter or setter")
-        this.toAssignable(prop.value, isBinding)
+      if (refDestructuringErrors) this.checkPatternErrors(refDestructuringErrors, true)
+      for (let prop of node.properties) {
+        this.toAssignable(prop, isBinding)
+        // Early error:
+        //   AssignmentRestProperty[Yield, Await] :
+        //     `...` DestructuringAssignmentTarget[Yield, Await]
+        //
+        //   It is a Syntax Error if |DestructuringAssignmentTarget| is an |ArrayLiteral| or an |ObjectLiteral|.
+        if (
+          prop.type === "RestElement" &&
+          (prop.argument.type === "ArrayPattern" || prop.argument.type === "ObjectPattern")
+        ) {
+          this.raise(prop.argument.start, "Unexpected token")
+        }
       }
+      break
+
+    case "Property":
+      // AssignmentProperty has type === "Property"
+      if (node.kind !== "init") this.raise(node.key.start, "Object pattern can't contain getter or setter")
+      this.toAssignable(node.value, isBinding)
       break
 
     case "ArrayExpression":
       node.type = "ArrayPattern"
+      if (refDestructuringErrors) this.checkPatternErrors(refDestructuringErrors, true)
       this.toAssignableList(node.elements, isBinding)
       break
 
+    case "SpreadElement":
+      node.type = "RestElement"
+      this.toAssignable(node.argument, isBinding)
+      if (node.argument.type === "AssignmentPattern")
+        this.raise(node.argument.start, "Rest elements cannot have a default value")
+      break
+
     case "AssignmentExpression":
-      if (node.operator === "=") {
-        node.type = "AssignmentPattern"
-        delete node.operator
-        // falls through to AssignmentPattern
-      } else {
-        this.raise(node.left.end, "Only '=' operator can be used for specifying default value.")
-        break
-      }
+      if (node.operator !== "=") this.raise(node.left.end, "Only '=' operator can be used for specifying default value.")
+      node.type = "AssignmentPattern"
+      delete node.operator
+      this.toAssignable(node.left, isBinding)
+      // falls through to AssignmentPattern
 
     case "AssignmentPattern":
-      if (node.right.type === "YieldExpression")
-        this.raise(node.right.start, "Yield expression cannot be a default value")
       break
 
     case "ParenthesizedExpression":
-      node.expression = this.toAssignable(node.expression, isBinding)
+      this.toAssignable(node.expression, isBinding)
       break
 
     case "MemberExpression":
@@ -54,7 +78,7 @@ pp.toAssignable = function(node, isBinding) {
     default:
       this.raise(node.start, "Assigning to rvalue")
     }
-  }
+  } else if (refDestructuringErrors) this.checkPatternErrors(refDestructuringErrors, true)
   return node
 }
 
@@ -62,25 +86,14 @@ pp.toAssignable = function(node, isBinding) {
 
 pp.toAssignableList = function(exprList, isBinding) {
   let end = exprList.length
-  if (end) {
-    let last = exprList[end - 1]
-    if (last && last.type == "RestElement") {
-      --end
-    } else if (last && last.type == "SpreadElement") {
-      last.type = "RestElement"
-      let arg = last.argument
-      this.toAssignable(arg, isBinding)
-      if (arg.type !== "Identifier" && arg.type !== "MemberExpression" && arg.type !== "ArrayPattern")
-        this.unexpected(arg.start)
-      --end
-    }
-
-    if (isBinding && last && last.type === "RestElement" && last.argument.type !== "Identifier")
-      this.unexpected(last.argument.start)
-  }
   for (let i = 0; i < end; i++) {
     let elt = exprList[i]
     if (elt) this.toAssignable(elt, isBinding)
+  }
+  if (end) {
+    let last = exprList[end - 1]
+    if (this.options.ecmaVersion === 6 && isBinding && last && last.type === "RestElement" && last.argument.type !== "Identifier")
+      this.unexpected(last.argument.start)
   }
   return exprList
 }
@@ -94,13 +107,15 @@ pp.parseSpread = function(refDestructuringErrors) {
   return this.finishNode(node, "SpreadElement")
 }
 
-pp.parseRest = function(allowNonIdent) {
+pp.parseRestBinding = function() {
   let node = this.startNode()
   this.next()
 
   // RestElement inside of a function parameter must be an identifier
-  if (allowNonIdent) node.argument = this.type === tt.name ? this.parseIdent() : this.unexpected()
-  else node.argument = this.type === tt.name || this.type === tt.bracketL ? this.parseBindingAtom() : this.unexpected()
+  if (this.options.ecmaVersion === 6 && this.type !== tt.name)
+    this.unexpected()
+
+  node.argument = this.parseBindingAtom()
 
   return this.finishNode(node, "RestElement")
 }
@@ -108,26 +123,22 @@ pp.parseRest = function(allowNonIdent) {
 // Parses lvalue (assignable) atom.
 
 pp.parseBindingAtom = function() {
-  if (this.options.ecmaVersion < 6) return this.parseIdent()
-  switch (this.type) {
-  case tt.name:
-    return this.parseIdent()
+  if (this.options.ecmaVersion >= 6) {
+    switch (this.type) {
+    case tt.bracketL:
+      let node = this.startNode()
+      this.next()
+      node.elements = this.parseBindingList(tt.bracketR, true, true)
+      return this.finishNode(node, "ArrayPattern")
 
-  case tt.bracketL:
-    let node = this.startNode()
-    this.next()
-    node.elements = this.parseBindingList(tt.bracketR, true, true)
-    return this.finishNode(node, "ArrayPattern")
-
-  case tt.braceL:
-    return this.parseObj(true)
-
-  default:
-    this.unexpected()
+    case tt.braceL:
+      return this.parseObj(true)
+    }
   }
+  return this.parseIdent()
 }
 
-pp.parseBindingList = function(close, allowEmpty, allowTrailingComma, allowNonIdent) {
+pp.parseBindingList = function(close, allowEmpty, allowTrailingComma) {
   let elts = [], first = true
   while (!this.eat(close)) {
     if (first) first = false
@@ -137,7 +148,7 @@ pp.parseBindingList = function(close, allowEmpty, allowTrailingComma, allowNonId
     } else if (allowTrailingComma && this.afterTrailingComma(close)) {
       break
     } else if (this.type === tt.ellipsis) {
-      let rest = this.parseRest(allowNonIdent)
+      let rest = this.parseRestBinding()
       this.parseBindingListItem(rest)
       elts.push(rest)
       if (this.type === tt.comma) this.raise(this.start, "Comma is not permitted after the rest element")
@@ -169,48 +180,69 @@ pp.parseMaybeDefault = function(startPos, startLoc, left) {
 
 // Verify that a node is an lval — something that can be assigned
 // to.
+// bindingType can be either:
+// 'var' indicating that the lval creates a 'var' binding
+// 'let' indicating that the lval creates a lexical ('let' or 'const') binding
+// 'none' indicating that the binding should be checked for illegal identifiers, but not for duplicate references
 
-pp.checkLVal = function(expr, isBinding, checkClashes) {
+pp.checkLVal = function(expr, bindingType, checkClashes) {
   switch (expr.type) {
   case "Identifier":
     if (this.strict && this.reservedWordsStrictBind.test(expr.name))
-      this.raiseRecoverable(expr.start, (isBinding ? "Binding " : "Assigning to ") + expr.name + " in strict mode")
+      this.raiseRecoverable(expr.start, (bindingType ? "Binding " : "Assigning to ") + expr.name + " in strict mode")
     if (checkClashes) {
       if (has(checkClashes, expr.name))
         this.raiseRecoverable(expr.start, "Argument name clash")
       checkClashes[expr.name] = true
     }
+    if (bindingType && bindingType !== "none") {
+      if (
+        bindingType === "var" && !this.canDeclareVarName(expr.name) ||
+        bindingType !== "var" && !this.canDeclareLexicalName(expr.name)
+      ) {
+        this.raiseRecoverable(expr.start, `Identifier '${expr.name}' has already been declared`)
+      }
+      if (bindingType === "var") {
+        this.declareVarName(expr.name)
+      } else {
+        this.declareLexicalName(expr.name)
+      }
+    }
     break
 
   case "MemberExpression":
-    if (isBinding) this.raiseRecoverable(expr.start, (isBinding ? "Binding" : "Assigning to") + " member expression")
+    if (bindingType) this.raiseRecoverable(expr.start, "Binding member expression")
     break
 
   case "ObjectPattern":
-    for (let i = 0; i < expr.properties.length; i++)
-      this.checkLVal(expr.properties[i].value, isBinding, checkClashes)
+    for (let prop of expr.properties)
+      this.checkLVal(prop, bindingType, checkClashes)
+    break
+
+  case "Property":
+    // AssignmentProperty has type === "Property"
+    this.checkLVal(expr.value, bindingType, checkClashes)
     break
 
   case "ArrayPattern":
-    for (let i = 0; i < expr.elements.length; i++) {
-      let elem = expr.elements[i]
-      if (elem) this.checkLVal(elem, isBinding, checkClashes)
+    for (let elem of expr.elements) {
+      if (elem) this.checkLVal(elem, bindingType, checkClashes)
     }
     break
 
   case "AssignmentPattern":
-    this.checkLVal(expr.left, isBinding, checkClashes)
+    this.checkLVal(expr.left, bindingType, checkClashes)
     break
 
   case "RestElement":
-    this.checkLVal(expr.argument, isBinding, checkClashes)
+    this.checkLVal(expr.argument, bindingType, checkClashes)
     break
 
   case "ParenthesizedExpression":
-    this.checkLVal(expr.expression, isBinding, checkClashes)
+    this.checkLVal(expr.expression, bindingType, checkClashes)
     break
 
   default:
-    this.raise(expr.start, (isBinding ? "Binding" : "Assigning to") + " rvalue")
+    this.raise(expr.start, (bindingType ? "Binding" : "Assigning to") + " rvalue")
   }
 }

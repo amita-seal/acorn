@@ -6,11 +6,11 @@
 // Git repositories for Acorn are available at
 //
 //     http://marijnhaverbeke.nl/git/acorn
-//     https://github.com/ternjs/acorn.git
+//     https://github.com/acornjs/acorn.git
 //
 // Please use the [github bug tracker][ghbt] to report issues.
 //
-// [ghbt]: https://github.com/ternjs/acorn/issues
+// [ghbt]: https://github.com/acornjs/acorn/issues
 //
 // This file defines the main parser interface. The library also comes
 // with a [error-tolerant parser][dammit] and an
@@ -25,18 +25,19 @@ import "./statement"
 import "./lval"
 import "./expression"
 import "./location"
+import "./scope"
 
 export {Parser, plugins} from "./state"
 export {defaultOptions} from "./options"
 export {Position, SourceLocation, getLineInfo} from "./locutil"
 export {Node} from "./node"
-export {TokenType, types as tokTypes} from "./tokentype"
+export {TokenType, types as tokTypes, keywords as keywordTypes} from "./tokentype"
 export {TokContext, types as tokContexts} from "./tokencontext"
 export {isIdentifierChar, isIdentifierStart} from "./identifier"
 export {Token} from "./tokenize"
-export {isNewLine, lineBreak, lineBreakG} from "./whitespace"
+export {isNewLine, lineBreak, lineBreakG, nonASCIIwhitespace} from "./whitespace"
 
-export const version = "3.3.0"
+export const version = "5.7.3"
 
 // The main exported interface (under `self.acorn` when in the
 // browser) is a `parse` function that takes a code string and
@@ -64,4 +65,14 @@ export function parseExpressionAt(input, pos, options) {
 
 export function tokenizer(input, options) {
   return new Parser(options, input)
+}
+
+// This is a terrible kludge to support the existing, pre-ES6
+// interface where the loose parser module retroactively adds exports
+// to this module.
+export let parse_dammit, LooseParser, pluginsLoose // eslint-disable-line camelcase
+export function addLooseExports(parse, Parser, plugins) {
+  parse_dammit = parse // eslint-disable-line camelcase
+  LooseParser = Parser
+  pluginsLoose = plugins
 }

@@ -1,5 +1,6 @@
-/node_modules
+.DS_Store
+node_modules
 /.tern-port
 /local
-/bin/acorn
+/bin/_acorn.js
 /dist
